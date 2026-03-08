@@ -1,253 +1,277 @@
-# Real-time Food Delivery (Modular Monolith + Event-Driven)
+# Real-time Food Delivery
 
-Real-time Food Delivery app với 4 nhóm actor:
+Food Delivery demo project cho 4 nhóm actor:
 
-- **Customer**: đặt món, theo dõi đơn hàng real-time
-- **Staff**: nhận/duyệt đơn, chuẩn bị món
-- **Driver**: nhận đơn giao, cập nhật trạng thái + vị trí
-- **Admin**: dashboard, approve driver, thống kê
-
-## Tech Stack
-
-- **Backend**: NestJS + MongoDB + Mongoose
-- **Realtime**: WebSocket (Nest Gateway) + internal Event-driven (NestJS EventEmitter2)
-- **Frontend**: Next.js 16 (App Router) + React 19
-- **Maps**: OpenStreetMap + Leaflet.js
+- Customer: xem menu, thêm vào cart, đặt hàng, xem lịch sử và chi tiết đơn
+- Staff: xử lý kitchen ticket theo trạng thái
+- Driver: nhận job giao hàng và cập nhật trạng thái giao hàng
+- Admin: duyệt driver, xem dashboard và quản lý menu theo milestone plan
 
 ## Project Scope
 
-> **Demo-only**: 4-7 concurrent users, happy path focused, không production.
-> **Team**: 4 interns, 11 weeks.
-> **Architecture**: Simplified for learning - Modular Monolith + Event-Driven.
+> Demo cho giảng viên, 4-7 concurrent users, happy path focused, không production.
+> Team 4 thành viên, timeline 11 tuần.
+> Architecture baseline: Layered Architecture + Client-Server.
+
+## Tech Stack
+
+- Backend: NestJS + MongoDB + Mongoose
+- Frontend: Next.js 16 App Router + React 19 + TypeScript
+- Realtime: WebSocket (Nest Gateway + Socket.IO)
+- Internal workflow propagation: EventEmitter2 + `@OnEvent()`
+- Maps: OpenStreetMap + Leaflet.js
 
 ---
 
 # Architecture Overview
 
-## 1. Modular Monolith + Ownership + Event-Driven
+## 1. Primary Architecture
 
-Dự án là **1 backend deployable** (monolith), nhưng code được chia theo **modules** (Option A / domain-per-module).
+Hệ thống được mô tả tốt nhất là:
 
-### Ownership (Single-writer)
+- Layered Architecture + Client-Server ở mức toàn hệ thống
+- Modular Monolith ở mức tổ chức backend
+- In-process Event-Driven ở mức giao tiếp giữa các module backend
 
-Mỗi collection trong MongoDB có **1 module sở hữu (own)** và chỉ module đó được **write** trực tiếp vào collection đó.
+Nói ngắn gọn:
 
-Ví dụ (core modules):
-- `ordering` owns: `orders`
-- `order-processing` owns: `kitchenTickets`
-- `delivery` owns: `deliveryAssignments`, `drivers`
-- `tracking` owns: `trackingSessions`, `driverLocations` (persist)
+- Frontend đóng vai trò client cho 4 actor: Customer, Staff, Driver, Admin
+- Backend NestJS là server tập trung, giữ source of truth cho auth, ordering, order processing, delivery, và realtime tracking
+- Business flow đi theo hướng: Client -> Controller/Boundary -> Service/Application Logic -> Repository/Data + Integration/Gateway
 
-> **Lưu ý:** Module khác muốn thay đổi dữ liệu owned-by-module khác => **không update trực tiếp DB/model**; phải đi qua **Domain Events**.
+## 2. Current Backend Design
 
-### Event-driven internal
+Backend hiện tại không còn là cấu trúc flat `Controller -> Service -> Schema`. Project đang dùng cấu trúc layer nhẹ để bám sát design phase:
 
-Các module giao tiếp bằng **Domain Events** chạy nội bộ qua `@nestjs/event-emitter`.
-
-**Simplified event pattern** (không dùng class/abstract base):
-
-```typescript
-// Publish: emit string key + plain object payload
-this.eventEmitter.emit('order.placed', { 
-  orderId: '123', 
-  items: [...], 
-  customerId: 'abc' 
-});
-
-// Subscribe: @OnEvent decorator trong Service
-@Injectable()
-export class OrderProcessingService {
-  @OnEvent('order.placed')
-  handleOrderPlaced(payload: { orderId: string; items: any[]; customerId: string }) {
-    // Tạo KitchenTicket...
-  }
-}
+```text
+backend/src/
+├── common/
+│   ├── configs/              # ConfigModule, env validation
+│   ├── database/             # Mongo connection and shared schema base
+│   ├── decorators/           # @Public, @Roles, @CurrentUser
+│   └── guards/               # JwtAuthGuard, RolesGuard
+├── integrations/
+│   ├── map/
+│   │   ├── adapters/
+│   │   ├── interfaces/
+│   │   └── map.module.ts
+│   └── payment/
+│       ├── adapters/
+│       ├── interfaces/
+│       └── payment.module.ts
+├── modules/
+│   ├── auth/
+│   ├── delivery/
+│   ├── events/
+│   ├── order-processing/
+│   └── ordering/
+├── shared/
+│   ├── constants/
+│   └── enums/
+├── app.module.ts
+├── main.ts
+└── seed.ts
 ```
 
-**6 cross-module events:**
-1. `order.placed` → Order-Processing tạo ticket
-2. `ticket.confirmed` → Ordering: order CONFIRMED
-3. `ticket.rejected` → Ordering: order CANCELLED
-4. `ticket.ready` → Ordering: order READY + Delivery: tạo job
-5. `delivery.accepted` → Ordering: order DELIVERING
-6. `delivery.delivered` → Ordering: order DELIVERED
-
-## 2. Simplified Module Structure
-
-Mỗi module được tổ chức theo pattern **Controller → Service → Schema** (flat structure):
+Trong mỗi domain module, code thường được chia tiếp thành:
 
 ```text
 modules/{module-name}/
-├── {module}.module.ts          # Module registration
-├── {module}.controller.ts      # REST endpoints (thin)
-├── {module}.service.ts         # Business logic + @OnEvent handlers
-└── {entity}.schema.ts          # Mongoose schema (= Entity)
+├── {module}.module.ts
+├── {module}.controller.ts // lớp nhận request từ client. Thuộc <<boundary>> layer (điểm vào của API)
+├── {module}.service.ts  // nơi chứa application logic và các handler dùng OnEvent
+├── repositories/
+├── state/    // nơi giữ rule chuyển state cho Order, Ticket, Delivery, Driver
+├── dto/  // request/response DTOs
+├── schemas/
+└── {entity}.schema.ts    //chứa các schema chính của module
 ```
 
-**Không dùng**: ~~boundary/~~, ~~control/~~, ~~entity/~~, ~~ports/~~, ~~infrastructure/~~, ~~UseCase classes~~, ~~Repository ports~~
+Điểm quan trọng:
 
-> **Rule:**
-> - Controller chỉ: validate DTO, gọi Service, trả response
-> - Service chứa: business logic, gọi Mongoose Model, emit events, @OnEvent handlers
-> - Schema = Mongoose schema + Entity (không tách riêng)
+- Controllers và WebSocket Gateway đóng vai trò boundary
+- Services giữ application logic và `@OnEvent()` handlers
+- Repositories bọc truy cập Mongoose
+- `state/` guards kiểm tra transition hợp lệ cho Order, Ticket, Delivery, Driver
+- `integrations/` hiện thực Adapter pattern cho payment và map
+
+## 3. Design Mapping
+
+| Design View | Current Implementation |
+|-------------|------------------------|
+| `<<boundary>>` | NestJS Controllers + WebSocket Gateway |
+| `<<application logic>>` | NestJS Services |
+| `<<entity>>` | Mongoose schemas / domain data objects |
+| External Gateway | `integrations/payment`, `integrations/map` |
+| Data Access | `repositories/` per module |
+| State-dependent control | `state/` guards + transition maps |
+
+## 4. Event-Driven Communication
+
+Event-driven ở đây là giao tiếp nội bộ giữa các module trong cùng một backend process, không phải distributed event bus hay microservices.
+
+```typescript
+this.eventEmitter.emit('order.placed', { orderId, items, customerId });
+
+@OnEvent('order.placed')
+handleOrderPlaced(payload: { orderId: string; items: any[] }) {
+  // Create KitchenTicket
+}
+```
+
+Cross-module events đang dùng trong flow hiện tại:
+
+1. `order.placed` -> Order-Processing tạo ticket
+2. `ticket.confirmed` -> Ordering cập nhật order sang `CONFIRMED`
+3. `ticket.rejected` -> Ordering cập nhật order sang `CANCELLED`
+4. `ticket.ready` -> Ordering cập nhật order sang `READY`, đồng thời Delivery tạo job
+5. `delivery.accepted` -> Ordering cập nhật order sang `DELIVERING`
+6. `delivery.delivered` -> Ordering cập nhật order sang `DELIVERED`
 
 ---
 
-# 6 Flows Overview
-
-Dự án được chia thành 6 flows:
+# Flows Overview
 
 ## Core Flows
 
-| Flow | Tên | Mô tả | Modules |
-|------|-----|-------|---------|
-| **Flow 1** | Ordering | Customer đặt hàng → Menu, Cart, Order | `ordering` |
-| **Flow 2** | Order Processing | Staff xử lý đơn → Accept/Reject/Ready | `order-processing` |
-| **Flow 3** | Delivery | Driver nhận đơn → Accept, Pickup, Complete | `delivery` |
-| **Flow 4** | Tracking | Realtime location → Driver gửi vị trí, Customer xem map | `tracking` |
+| Flow | Tên | Mô tả | Backend | Frontend |
+|------|-----|-------|---------|----------|
+| Flow 1 | Ordering | Customer đặt hàng -> Menu, Cart, Order | Ordering | Customer UI |
+| Flow 2 | Order Processing | Staff xử lý đơn -> Queue, Accept/Reject/Ready | Order-Processing | Staff UI |
+| Flow 3 | Delivery | Driver nhận đơn -> Accept, Pickup, Complete | Delivery | Driver UI |
+| Flow 4 | Tracking | Driver gửi vị trí, Customer xem map | Events Gateway + Ordering/Delivery context | Tracking UI |
 
 ## Supporting Flows
 
-| Flow | Tên | Mô tả | Modules |
-|------|-----|-------|------|
-| **Flow 5** | Driver Recruitment | Driver apply → Admin approve/reject | `auth` + `delivery` |
-| **Flow 6** | Admin Dashboard | Statistics + Menu Management | `admin` |
+| Flow | Tên | Mô tả | Backend | Frontend |
+|------|-----|-------|---------|----------|
+| Flow 5 | Driver Recruitment | Driver apply -> Admin approve/reject | Delivery + Auth | Driver/Admin UI |
+| Flow 6 | Admin Dashboard | Statistics + Menu Management | Planned in backend, partial in frontend | Admin UI |
 
 ```mermaid
 flowchart TB
-    subgraph Core[Core Flows]
-        C[Customer] --> Menu --> Cart --> Order
-        Order --> Ticket[Kitchen Ticket]
-        Ticket --> Staff[Staff Process]
-        Staff --> Job[Delivery Job]
-        Job --> Driver[Driver Deliver]
-        Driver --> FakeLoc[Fake Location]
-        FakeLoc --> WS[WebSocket]
-        WS --> Map[Customer Map]
+  subgraph Core[Core Flows]
+    subgraph F1[Flow 1: Ordering]
+      C[Customer] --> Menu --> Cart --> Order
     end
-    
-    subgraph Support[Supporting Flows]
-        Apply[Driver Apply] --> Review[Admin Review]
-        Stats[Statistics] --> Dashboard[Admin Dashboard]
+
+    subgraph F2[Flow 2: Order Processing]
+      Order --> Ticket[Kitchen Ticket]
+      Ticket --> Staff[Staff Accept Reject Ready]
     end
+
+    subgraph F3[Flow 3: Delivery]
+      Staff --> Job[Delivery Job]
+      Job --> Driver[Driver Accept Pickup Complete]
+    end
+
+    subgraph F4[Flow 4: Tracking]
+      Driver --> FakeLoc[Fake Location]
+      FakeLoc --> WS[WebSocket]
+      WS --> Map[Customer Map]
+    end
+  end
+
+  subgraph Support[Supporting Flows]
+    Apply[Driver Apply] --> Review[Admin Review]
+    Stats[Statistics] --> Dashboard[Admin Dashboard]
+  end
 ```
 
 ---
 
-# Repository Structure
+# Current Repository Structure
 
 ## Root
 
 ```text
 food-delivery/
-├── backend/          # NestJS API + WS + event-driven
-├── frontend/         # Next.js app
-├── scripts/          # helper scripts (github issues, etc.)
-└── .github/          # issue templates
+├── .github/
+├── backend/
+├── docs/
+├── frontend/
+├── plans/
+├── package.json
+└── README.md
 ```
 
-## Backend
+## Backend Modules
+
+- `modules/auth/`: login, register, me, JWT, user repository
+- `modules/ordering/`: menu endpoints, order creation, order history/detail, order event reactions
+- `modules/order-processing/`: kitchen ticket endpoints, ticket lifecycle, `order.placed` subscriber
+- `modules/delivery/`: delivery jobs, driver recruitment endpoints, delivery lifecycle, `ticket.ready` subscriber
+- `modules/events/`: WebSocket gateway cho realtime tracking
+- `integrations/payment/`: payment gateway abstraction + mock adapter
+- `integrations/map/`: map gateway abstraction + mock adapter
+
+## Frontend Structure
 
 ```text
-backend/src/
-├── infrastructure/
-│   ├── config/           # ConfigModule + env validation
-│   └── mongo/            # MongoModule
-├── eventing/
-│   ├── eventing.module.ts    # EventEmitterModule
-│   └── events/               # Event payload interfaces (optional)
-└── modules/
-    ├── auth/
-    │   ├── auth.module.ts
-    │   ├── auth.controller.ts
-    │   ├── auth.service.ts
-    │   ├── user.schema.ts
-    │   ├── guards/           # JwtAuthGuard, RolesGuard
-    │   ├── strategies/       # JwtStrategy
-    │   └── decorators/       # @Public(), @Roles()
-    ├── ordering/
-    │   ├── ordering.module.ts
-    │   ├── ordering.controller.ts
-    │   ├── ordering.service.ts    # @OnEvent handlers
-    │   ├── order.schema.ts
-    │   └── menu-item.schema.ts
-    ├── order-processing/
-    │   ├── order-processing.module.ts
-    │   ├── order-processing.controller.ts
-    │   ├── order-processing.service.ts
-    │   └── kitchen-ticket.schema.ts
-    ├── delivery/
-    │   ├── delivery.module.ts
-    │   ├── delivery.controller.ts
-    │   ├── delivery.service.ts
-    │   ├── delivery-assignment.schema.ts
-    │   └── driver.schema.ts
-    └── tracking/
-        ├── tracking.module.ts
-        └── tracking.gateway.ts    # WebSocket Gateway
+frontend/src/
+├── app/
+│   ├── (admin)/
+│   ├── (customer)/
+│   ├── (driver)/
+│   ├── (staff)/
+│   ├── login/
+│   ├── register/
+│   ├── layout.tsx
+│   └── providers.tsx
+├── components/
+│   ├── layout/
+│   ├── shared/
+│   └── ui/
+├── features/
+│   ├── admin/
+│   ├── auth/
+│   ├── cart/
+│   ├── driver/
+│   ├── menu/
+│   ├── orders/
+│   ├── staff/
+│   └── tracking/
+├── lib/
+└── types/
 ```
+
+Frontend vẫn theo feature-based pattern:
+
+- `features/` chứa domain logic, hooks, services, domain UI
+- `components/` chứa shared UI và layout
+- `lib/api.ts` là Axios wrapper với JWT interceptor
+- App Router groups đang tồn tại cho 4 actor, nhưng route-group-specific `layout.tsx` vẫn chưa hoàn tất đủ theo milestone plan
 
 ---
 
-# Frontend Architecture & Structure (Next.js)
+# Current Implementation Status
 
-Frontend sử dụng **Pure Feature-Based Architecture** — domain modules trong `features/`, shared UI trong `components/`.
+README cũ mô tả một số phần như thể đã hoàn thành toàn bộ. Thực tế hiện tại gần đúng hơn là:
 
-## 1. Routing theo Actor (App Router)
+## Implemented
 
-Routes được nhóm theo actor:
+- Auth backend hoàn chỉnh: register, login, me, global guards, JWT
+- Seed script tạo test users và menu items
+- Ordering flow backend và frontend cơ bản hoàn chỉnh
+- Order Processing backend hoàn chỉnh; Staff queue UI đã có
+- Delivery backend hoàn chỉnh; Driver jobs UI đã có
+- WebSocket gateway backend cho tracking đã có
+- Driver recruitment backend đã có
+- Admin drivers page frontend đã có
 
-- `(customer)` : Menu, Cart, Orders, Order Tracking
-- `(staff)`    : Kitchen Tickets Queue
-- `(driver)`   : Delivery Jobs, Apply
-- `(admin)`    : Dashboard, Driver Approval, Menu Management
+## Partial / Pending
 
-## 2. Feature Modules
+- Route group layouts riêng cho `(customer)`, `(staff)`, `(driver)`, `(admin)` chưa hoàn tất đầy đủ
+- Staff ticket detail page chưa có
+- Frontend WebSocket client cho tracking chưa implement xong
+- Customer tracking page chưa hoàn tất
+- Driver fake location UI chưa hoàn tất
+- Admin stats backend chưa có
+- Admin menu CRUD backend chưa có
+- Driver apply page frontend chưa có
+- Admin menu page frontend chưa có
 
-Mỗi feature module chứa:
-
-```text
-features/{feature}/
-├── {feature}.service.ts    # API calls
-├── use{Feature}.ts         # Custom hook
-├── {Feature}Context.tsx    # React Context (if needed)
-├── {Component}.tsx         # UI components
-└── index.ts                # Barrel export
-```
-
-**Modules:**
-- `features/auth/` → Login, AuthContext, useAuth
-- `features/menu/` → MenuList, MenuItemCard, useMenu
-- `features/cart/` → CartContext, CartList, useCart
-- `features/orders/` → OrderList, OrderDetail, OrderStatusBadge
-- `features/staff/` → TicketQueue, TicketCard
-- `features/driver/` → JobList, JobCard, DriverApply
-- `features/tracking/` → TrackingMap (Leaflet.js)
-- `features/admin/` → StatsCards, DriverTable, MenuTable
-
-## 3. Shared Components
-
-`components/` chỉ chứa **non-domain** shared components:
-
-- `components/ui/` — shadcn/ui primitives (Button, Card, Input...)
-- `components/layout/` — Header, Sidebar, BottomNav, PageContainer
-- `components/shared/` — PageHeader
-
-> **Rule:** 
-> - Pages import từ `features/` (qua barrel export `index.ts`)
-> - Features import từ `lib/api.ts` (HTTP client) và `components/ui/`
-> - **KHÔNG** để domain components trong `components/`
-
-See [docs/frontend-architecture.md](docs/frontend-architecture.md) for detailed rules.
-
-### Modules mapping to flows
-
-- **Flow 1** → `features/menu/`, `features/cart/`, `features/orders/`
-- **Flow 2** → `features/staff/`
-- **Flow 3** → `features/driver/`
-- **Flow 4** → `features/tracking/`
-- **Flow 5** → `features/driver/` + `features/admin/`
-- **Flow 6** → `features/admin/`
+Chi tiết task breakdown và progress được theo dõi tại [plans/milestone-plan.md](plans/milestone-plan.md).
 
 ---
 
@@ -256,7 +280,7 @@ See [docs/frontend-architecture.md](docs/frontend-architecture.md) for detailed 
 ## Requirements
 
 - Node.js (LTS)
-- MongoDB (local or Docker)
+- MongoDB local hoặc Docker
 
 ## Backend
 
@@ -283,7 +307,7 @@ JWT_SECRET=your-secret-key-change-in-production
 npm run seed
 ```
 
-Tạo 4 test users (customer/staff/driver/admin @test.com, pass: 123456) + 10 menu items.
+Seed hiện tại tạo 4 test users và menu items.
 
 ### 4. Run
 
@@ -291,8 +315,10 @@ Tạo 4 test users (customer/staff/driver/admin @test.com, pass: 123456) + 10 me
 npm run start:dev
 ```
 
-> - API: `http://localhost:3001/api`
-> - CORS enabled cho `http://localhost:3000` (frontend)
+Backend API:
+
+- API base URL: `http://localhost:3001/api`
+- CORS enabled cho `http://localhost:3000`
 
 ## Frontend
 
@@ -304,78 +330,56 @@ npm run dev
 
 ---
 
-# Conventions (để không phá kiến trúc)
+# API Summary
 
-## 1. No cross-module DB access
+## Implemented APIs
 
-- Module A **không** được import schema/model/repo của module B.
-- Muốn “tác động” module khác => publish **Domain Event**.
+### Auth
 
-## 2. Backend: Flat module structure
+- `POST /api/auth/register` -> `{ token, user }`
+- `POST /api/auth/login` -> `{ token, user }`
+- `GET /api/auth/me` -> `{ id, email, role, name }`
 
-- Mỗi module: `{module}.module.ts`, `{module}.controller.ts`, `{module}.service.ts`, `{entity}.schema.ts`
-- **Không** tạo thêm subfolder: ~~boundary/~~, ~~control/~~, ~~entity/~~, ~~ports/~~, ~~infrastructure/~~
-- Controller thin: chỉ validate, gọi Service, trả response
-- Service chứa business logic + @OnEvent handlers
+### Ordering
 
-## 3. Frontend: Pure feature-based
+- `GET /api/menu`
+- `POST /api/orders`
+- `GET /api/orders/my`
+- `GET /api/orders/:id`
 
-- Domain modules nằm trong `features/` (VD: `features/cart/`, `features/menu/`)
-- `components/` chỉ chứa shared UI/layout, **không** chứa domain logic
-- Pages import từ `features/` qua barrel export `index.ts`
+### Order Processing
 
-## 4. Events are facts
+- `GET /api/tickets`
+- `GET /api/tickets/:id`
+- `POST /api/tickets/:id/accept`
+- `POST /api/tickets/:id/reject`
+- `POST /api/tickets/:id/ready`
 
-- Event mô tả "điều đã xảy ra" (VD: `order.placed`, `ticket.ready`).
-- Không dùng event như "command" ra lệnh module khác.
-- Emit với string key + plain object payload (không dùng class/base class)
+### Delivery
 
----
+- `GET /api/delivery/jobs`
+- `POST /api/delivery/jobs/:id/accept`
+- `POST /api/delivery/jobs/:id/pickup`
+- `POST /api/delivery/jobs/:id/complete`
 
----
+### Tracking WebSocket
 
-# API Endpoints Summary
+- `tracking:subscribe`
+- `driver:location`
 
-See [plans/milestone-plan.md](plans/milestone-plan.md) for detailed task breakdown.
+### Driver Recruitment
 
-### Auth (`@Public()` cho register/login)
-- `POST /api/auth/register` → `{ token, user }`
-- `POST /api/auth/login` → `{ token, user }`
-- `GET /api/auth/me` → `{ id, email, role, name }`
+- `POST /api/drivers/apply`
+- `GET /api/admin/drivers`
+- `POST /api/admin/drivers/:id/approve`
+- `POST /api/admin/drivers/:id/reject`
 
-### Ordering (Flow 1)
-- `GET /api/menu` — Public, filter: `?category=Main`
-- `POST /api/orders` — Customer role, emit `order.placed`
-- `GET /api/orders/my` — Customer role
-- `GET /api/orders/:id` — Authenticated
+## Planned / Not Yet Implemented
 
-### Order Processing (Flow 2)
-- `GET /api/tickets` — Staff role, filter: `?status=PENDING`
-- `POST /api/tickets/:id/accept` — Staff, emit `ticket.confirmed`
-- `POST /api/tickets/:id/reject` — Staff, body: `{reason}`
-- `POST /api/tickets/:id/ready` — Staff, emit `ticket.ready`
-
-### Delivery (Flow 3)
-- `GET /api/delivery/jobs` — Driver role (PENDING jobs)
-- `POST /api/delivery/jobs/:id/accept` — Driver, emit `delivery.accepted`
-- `POST /api/delivery/jobs/:id/pickup` — Driver
-- `POST /api/delivery/jobs/:id/complete` — Driver, emit `delivery.delivered`
-
-### Tracking (Flow 4)
-- `WS driver:location` — Driver emit `{orderId, lat, lng}`
-- `WS tracking:subscribe` — Customer join room `{orderId}`
-
-### Driver Recruitment (Flow 5)
-- `POST /api/drivers/apply` — Customer role
-- `GET /api/admin/drivers` — Admin role
-- `POST /api/admin/drivers/:id/approve` — Admin
-- `POST /api/admin/drivers/:id/reject` — Admin
-
-### Admin Dashboard (Flow 6)
-- `GET /api/admin/stats` — Admin role
-- `POST /api/admin/menu` — Admin
-- `PUT /api/admin/menu/:id` — Admin
-- `DELETE /api/admin/menu/:id` — Admin (soft delete)
+- `GET /api/admin/stats`
+- `POST /api/admin/menu`
+- `PUT /api/admin/menu/:id`
+- `DELETE /api/admin/menu/:id`
 
 ---
 
@@ -383,58 +387,75 @@ See [plans/milestone-plan.md](plans/milestone-plan.md) for detailed task breakdo
 
 ```mermaid
 sequenceDiagram
-    participant C as Customer
-    participant O as Ordering
-    participant OP as Order-Processing
-    participant D as Delivery
-    participant T as Tracking WS
-    participant DR as Driver
+  participant C as Customer
+  participant O as Ordering
+  participant OP as Order-Processing
+  participant D as Delivery
+  participant T as Tracking WS
+  participant DR as Driver
 
-    C->>O: POST /orders
-    O->>O: Create Order (PENDING)
-    O-->>OP: emit order.placed
-    OP->>OP: Create KitchenTicket (PENDING)
-    
-    Note over OP: Staff Accept
-    OP->>OP: Ticket → IN_PROGRESS
-    OP-->>O: emit ticket.confirmed
-    O->>O: Order → CONFIRMED
-    
-    Note over OP: Staff Ready
-    OP->>OP: Ticket → READY
-    OP-->>O: emit ticket.ready
-    OP-->>D: emit ticket.ready
-    O->>O: Order → READY
-    D->>D: Create DeliveryJob (PENDING)
-    
-    Note over D: Driver Accept
-    DR->>D: POST /delivery/jobs/:id/accept
-    D->>D: Job → ASSIGNED
-    D-->>O: emit delivery.accepted
-    O->>O: Order → DELIVERING
-    
-    Note over T: Driver sends fake location
-    DR->>T: WS driver:location {orderId, lat, lng}
-    T-->>C: WS broadcast to room order:{orderId}
-    
-    Note over D: Driver Complete
-    DR->>D: POST /delivery/jobs/:id/complete
-    D->>D: Job → DELIVERED
-    D-->>O: emit delivery.delivered
-    O->>O: Order → DELIVERED
+  C->>O: POST /orders
+  O->>O: Create Order (PENDING)
+  O-->>OP: emit order.placed
+  OP->>OP: Create KitchenTicket (PENDING)
+
+  Note over OP: Staff Accept
+  OP->>OP: Ticket -> IN_PROGRESS
+  OP-->>O: emit ticket.confirmed
+  O->>O: Order -> CONFIRMED
+
+  Note over OP: Staff Ready
+  OP->>OP: Ticket -> READY
+  OP-->>O: emit ticket.ready
+  OP-->>D: emit ticket.ready
+  O->>O: Order -> READY
+  D->>D: Create DeliveryJob (PENDING)
+
+  Note over D: Driver Accept
+  DR->>D: POST /delivery/jobs/:id/accept
+  D->>D: Job -> ASSIGNED
+  D-->>O: emit delivery.accepted
+  O->>O: Order -> DELIVERING
+
+  Note over T: Driver sends fake location
+  DR->>T: WS driver:location {orderId, lat, lng}
+  T-->>C: WS broadcast to room order:{orderId}
+
+  Note over D: Driver Complete
+  DR->>D: POST /delivery/jobs/:id/complete
+  D->>D: Job -> DELIVERED
+  D-->>O: emit delivery.delivered
+  O->>O: Order -> DELIVERED
 ```
 
 ---
 
-# Notes
+# Conventions
 
-- **Demo-scope**: 4-7 concurrent users, happy path only, no pagination/polling/complex error handling
-- **Event-Driven**: `EventEmitter2` + `@OnEvent()` directly. 6 events cho cross-module communication.
-- **Tracking**: Fake GPS location (dropdown presets), không dùng `navigator.geolocation`
-- **Frontend**: Feature-based pattern. `features/` chứa domain modules, `components/` chỉ shared UI/layout.
-- **Backend**: Flat structure. Controller → Service → Schema. No BCE/Port/Adapter/UseCase classes.
-- **Refresh**: Manual refresh (button hoặc F5) thay vì polling/auto-refresh
-- **WebSocket**: Query param `token` cho auth, không cần WS middleware phức tạp
-- Tracking persist `driverLocations` để có thể đọc lại "last location"/audit khi cần.
+## Backend
 
-See [plans/milestone-plan.md](plans/milestone-plan.md) for detailed 48-task breakdown.
+- Giữ dependency direction rõ: controller/gateway -> service -> repository/integration
+- Không truy cập Mongoose model trực tiếp trong business logic nếu repository đã tồn tại
+- Cross-module workflow nên đi qua events thay vì ghi thẳng vào module khác
+- State transitions của Order, Ticket, Delivery, Driver phải đi qua guard hoặc transition map tương ứng
+
+## Frontend
+
+- Domain logic nằm trong `features/`
+- Shared UI/layout nằm trong `components/`
+- HTTP calls đi qua `lib/api.ts`
+- Ưu tiên actor-based routing trong `app/`
+
+## Events
+
+- Event mô tả fact đã xảy ra, ví dụ `order.placed`, `ticket.ready`
+- Dùng string key + plain object payload
+- Không dùng distributed event bus hay microservice broker trong scope hiện tại
+
+---
+
+Xem thêm:
+
+- [plans/milestone-plan.md](plans/milestone-plan.md)
+- [docs/all-context-project.md](docs/all-context-project.md)
+- [docs/frontend-architecture.md](docs/frontend-architecture.md)

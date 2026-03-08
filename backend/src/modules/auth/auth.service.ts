@@ -1,35 +1,33 @@
 import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
 import * as bcrypt from 'bcrypt';
 import { User } from './user.schema';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { JwtPayload } from './interfaces/jwt-payload.interface';
+import { UserRepository } from './repositories/user.repository';
 
 @Injectable()
 export class AuthService {
   constructor(
-    @InjectModel(User.name) private userModel: Model<User>,
+    private readonly userRepository: UserRepository,
     private jwtService: JwtService,
   ) {}
 
   async register(registerDto: RegisterDto): Promise<{ token: string; user: any }> {
     const { email, password, name, role } = registerDto;
-    const existingUser = await this.userModel.findOne({ email });
+    const existingUser = await this.userRepository.findByEmail(email);
     if (existingUser) {
       throw new ConflictException('Email already in use');
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
-    const newUser = new this.userModel({
+    const newUser = await this.userRepository.createUser({
       email,
       passwordHash,
       name,
       role,
     });
-    await newUser.save();
 
     const payload: JwtPayload = {
       sub: newUser._id.toString(),
@@ -50,7 +48,7 @@ export class AuthService {
 
   async login(loginDto: LoginDto) {
     const { email, password } = loginDto;
-    const user = await this.userModel.findOne({ email });
+    const user = await this.userRepository.findByEmail(email);
 
     if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
       throw new UnauthorizedException('Invalid credentials');

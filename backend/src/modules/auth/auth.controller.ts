@@ -10,13 +10,13 @@ export class AuthController {
   constructor(private authService: AuthService) {}
 
   @Public()
-  @Post('register')
+  @Post('register')  // <- POST request tới /api/auth/register
   async register(@Body() registerDto: RegisterDto) {
     return this.authService.register(registerDto);
   }
 
   @Public()
-  @Post('login')
+  @Post('login')  // <- POST request tới /api/auth/login
   async login(@Body() loginDto: LoginDto) {
     return this.authService.login(loginDto);
   }

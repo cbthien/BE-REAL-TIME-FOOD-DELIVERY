@@ -10,6 +10,8 @@ import { OrderingModule } from './modules/ordering/ordering.module';
 import { OrderProcessingModule } from './modules/order-processing/order-processing.module';
 import { DeliveryModule } from './modules/delivery/delivery.module';
 import { EventsModule } from './modules/events/events.module';
+import { PaymentModule } from './integrations/payment/payment.module';
+import { MapModule } from './integrations/map/map.module';
 
 import { AuthModule } from './modules/auth/auth.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
@@ -25,6 +27,8 @@ import { RolesGuard } from './common/guards/roles.guard';
     OrderProcessingModule,
     DeliveryModule,
     EventsModule,
+    PaymentModule,
+    MapModule,
   ],
   controllers: [AppController],
   providers: [
