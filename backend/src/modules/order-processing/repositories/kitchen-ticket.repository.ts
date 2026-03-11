@@ -38,4 +38,12 @@ export class KitchenTicketRepository {
   async updateById(id: string, update: Record<string, unknown>): Promise<KitchenTicket | null> {
     return this.ticketModel.findByIdAndUpdate(id, update, { new: true }).exec();
   }
+  // Sử dung Atomic update để tránh vấn đề concurrency khi có nhiều người cùng cập nhật một ticket
+  async updatWithFilter(filter: any, updateData: any): Promise<KitchenTicket | null> {
+    return await this.ticketModel.findOneAndUpdate(
+      filter,
+      { $set: updateData },
+      { new: true },
+    ).exec(); // trả về 1 Promise
+  }
 }

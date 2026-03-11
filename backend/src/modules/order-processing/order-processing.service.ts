@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { EventEmitter2, OnEvent } from '@nestjs/event-emitter';
 import { KitchenTicket } from './kitchen-ticket.schema';
 import { KitchenTicketRepository } from './repositories/kitchen-ticket.repository';
@@ -41,50 +41,76 @@ export class OrderProcessingService {
     return this.kitchenTicketRepository.findById(id);
   }
 
+  //ACCEPT ORDER: Chuyển ticket từ PENDING -> IN_PROGRESS
   async acceptTicket(id: string, staffId: string): Promise<KitchenTicket> {
+    // 1. Lấy trạng thái hiện tại của ticket
     const currentTicket = await this.kitchenTicketRepository.findById(id);
     if (!currentTicket) {
       throw new NotFoundException(`Kitchen ticket ${id} not found`);
     }
 
+    // 2. Validate Domain Rule
     this.ticketStateGuard.assertTransition(currentTicket.status, 'IN_PROGRESS');
 
-    const ticket = await this.kitchenTicketRepository.updateById(id, {
-      status: 'IN_PROGRESS',
-      staffId,
-      acceptedAt: new Date(),
-    });
+    // 3. ATOMIC UPDATE: (Optimistic Locking)
+    // Update khi mà status đúng là cái vừa check
+    const ticket = await this.kitchenTicketRepository.updatWithFilter(
+      {
+        _id: id,
+        status: currentTicket.status, // RACE CONDITION nằm ở đây, 
+      },
+      {
+        status: 'IN_PROGRESS',
+        staffId,
+        acceptedAt: new Date(),
+      }
+    );
+
+    // 4. Quăng lỗi nếu có người đã cập nhật đơn rồi
     if (!ticket) {
-      throw new NotFoundException(`Kitchen ticket ${id} not found`);
+      throw new ConflictException(`Kitchen ticket ${id} has been updated by another process. Please refresh and try again.`);
     }
 
-    // Emit event for Ordering module
+    // 5. Emit event for Ordering module
     this.eventEmitter.emit('ticket.confirmed', { orderId: ticket.orderId });
+
+    // TODO: Emit event ra webSocket cho Frontend (staff B, staff C cùng cái ticket) ở đây.
 
     return ticket;
   }
 
+  // REJECT ORDER: Chuyển ticket từ PENDING -> REJECTED
   async rejectTicket(
     id: string,
     staffId: string,
     reason: string,
   ): Promise<KitchenTicket> {
+    // 1. Đọc để lấy trạng thái hiện tại của ticket
     const currentTicket = await this.kitchenTicketRepository.findById(id);
     if (!currentTicket) {
       throw new NotFoundException(`Kitchen ticket ${id} not found`);
     }
 
+    // 2. Validate Domain Rule
     this.ticketStateGuard.assertTransition(currentTicket.status, 'REJECTED');
 
-    const ticket = await this.kitchenTicketRepository.updateById(id, {
-      status: 'REJECTED',
-      staffId,
-      rejectionReason: reason,
-    });
-    if (!ticket) {
-      throw new NotFoundException(`Kitchen ticket ${id} not found`);
-    }
+    // 3. ATOMIC UPDATE: (Optimistic Locking)
+    const ticket = await this.kitchenTicketRepository.updatWithFilter(
+      {
+        _id: id,
+        status: currentTicket.status // status phải chưa bị staff khác đổi
+      },
+      {
+        status: 'REJECTED',
+        staffId,
+        rejectionReason: reason,
+      }
+    );
 
+    //4. Quăng lỗi nếu có người đã cập nhật đơn rồi
+    if (!ticket) {
+      throw new ConflictException(`Cannot reject. Kitchen ticket ${id} has been updated by another process. Please refresh and try again.`);
+    }
     // Emit event for Ordering module
     this.eventEmitter.emit('ticket.rejected', { orderId: ticket.orderId });
 
