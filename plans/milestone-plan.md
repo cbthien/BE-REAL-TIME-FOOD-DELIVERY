@@ -157,7 +157,7 @@ flowchart TB
 
 # Milestone 1: Foundation + Flow 1 (Tuần 1-4)
 
-**Mục tiêu**: Setup hoàn chỉnh + Customer đặt hàng end-to-end
+**Mục tiêu**: Setup hoàn chỉnh + Customer đặt hàng end-to-end mapping use case 02, 05, 06, 07, 08
 
 **Demo cuối M1**: Customer login → xem menu → thêm vào cart → place order → xem order status
 
@@ -194,7 +194,7 @@ flowchart TB
 
 # Milestone 2: Flow 2 - Staff Workflow (Tuần 5-6)
 
-**Mục tiêu**: Staff xử lý đơn hàng
+**Mục tiêu**: Staff xử lý đơn hàng mapping use case 11, 12, 13, 14, 15
 
 **Demo cuối M2**: Customer đặt → Staff thấy ticket → Accept/Reject/Ready → Customer thấy status đổi (sau refresh)
 
@@ -223,7 +223,7 @@ flowchart TB
 
 # Milestone 3: Flow 3 + Flow 4 - Delivery & Tracking (Tuần 7-9)
 
-**Mục tiêu**: Driver nhận đơn + Customer thấy vị trí driver trên map
+**Mục tiêu**: Driver nhận đơn + Customer thấy vị trí driver trên map mapping use case 17, 18, 19 (Flow 3) + use case 09, 20, và phần realtime của 08 (Flow 4)
 
 **Demo cuối M3**: Staff READY → Driver accept → Driver gửi fake location → Customer thấy trên map
 
@@ -255,7 +255,7 @@ flowchart TB
 
 # Milestone 4: Flow 5 + Flow 6 - Admin & Driver Recruitment (Tuần 10)
 
-**Mục tiêu**: Admin dashboard + Driver recruitment + Menu management
+**Mục tiêu**: Admin dashboard + Driver recruitment + Menu management mapping use case 1 theo phạm vi approve or reject driver application (Flow 5) + use case 23, 24 (Flow 6)
 
 **Demo cuối M4**: Driver apply → Admin approve + Dashboard stats
 
