@@ -85,28 +85,39 @@ export function ProductCard({ product, onAddToCart, index = 0 }: ProductCardProp
         </h3>
 
         {/* Price Section */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-baseline gap-2">
-            <span className="text-red-600 font-bold text-xl">
-              {product.price.toLocaleString()}₫
+        <div className="flex items-center justify-between mt-2">
+          <div className="flex flex-col">
+            <span className="text-red-600 font-bold text-lg">
+              {product.price.toLocaleString()}đ
             </span>
-            {product.originalPrice && (
-              <span className="text-gray-400 text-sm line-through">
-                {product.originalPrice.toLocaleString()}₫
+            {product.originalPrice ? (
+              <span className="text-gray-400 text-xs line-through">
+                {product.originalPrice.toLocaleString()}đ
               </span>
+            ) : (
+              <span className="h-4"></span>
             )}
           </div>
 
-          {/* Add to Cart Button */}
-          <motion.div whileTap={{ scale: 0.9 }}>
-            <Button
-              onClick={handleAddToCart}
-              size="icon"
-              className="rounded-full bg-white border-2 border-red-600 text-red-600 hover:bg-red-600 hover:text-white transition-all duration-300 shadow-md hover:shadow-lg"
-            >
-              <Plus className="w-5 h-5" />
-            </Button>
-          </motion.div>
+          {/* Small Add Button */}
+          <motion.button 
+            whileTap={{ scale: 0.9 }}
+            onClick={handleAddToCart}
+            className="w-8 h-8 rounded-full bg-red-50 text-red-600 flex items-center justify-center hover:bg-red-100 transition-colors"
+          >
+            <Plus className="w-5 h-5" />
+          </motion.button>
+        </div>
+
+        {/* Full Add to Cart Button */}
+        <div className="pt-2">
+          <Button
+            variant="outline"
+            onClick={handleAddToCart}
+            className="w-full rounded-full border-red-600 text-red-600 hover:bg-red-50 hover:text-red-700 transition-colors py-2 h-auto text-sm font-semibold"
+          >
+            Thêm vào giỏ
+          </Button>
         </div>
       </div>
 

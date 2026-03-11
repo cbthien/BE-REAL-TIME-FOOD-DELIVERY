@@ -19,11 +19,14 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<string>('must-try');
 
   // TODO: replace with API call: GET /api/menu — map _id and imageUrl to component shape
-  const products: Product[] = MOCK_MENU_ITEMS.map((item) => ({
+  const products: Product[] = MOCK_MENU_ITEMS.map((item, idx) => ({
     id: item._id,
     name: item.name,
     price: item.price,
+    originalPrice: item.price * 1.2, // Mock original price for design display
     image: item.imageUrl,  // component uses 'image'; API returns 'imageUrl'
+    badge: idx === 0 ? 'SALE' : idx === 1 ? 'NEW' : idx === 2 ? 'HOT' : 'BEST SELLER',
+    discount: idx === 0 ? 20 : undefined
   }));
   const tabs = PRODUCT_TABS;
   const banners = MOCK_PROMO_BANNERS;
@@ -43,19 +46,19 @@ export default function Home() {
       <HeroSection />
 
       {/* Product Tabs Section */}
-      <section className="py-12 lg:py-16">
+      <section className="pt-24 pb-12 lg:pt-32 lg:pb-16">
         <div className="container mx-auto px-4 lg:px-8">
           {/* Tab Navigation */}
-          <div className="flex justify-center mb-8">
-            <div className="inline-flex bg-white rounded-full p-1 shadow-md">
+          <div className="flex justify-center mb-8 border-b">
+            <div className="flex space-x-8">
               {tabs.map((tab) => (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`px-6 py-2 rounded-full text-sm font-semibold transition-all ${
+                  className={`pb-4 text-base font-bold transition-all border-b-2 -mb-[2px] ${
                     activeTab === tab.id
-                      ? 'bg-red-600 text-white shadow-lg'
-                      : 'text-gray-600 hover:text-red-600'
+                      ? 'border-red-600 text-red-600'
+                      : 'border-transparent text-gray-500 hover:text-red-500'
                   }`}
                 >
                   {tab.label}

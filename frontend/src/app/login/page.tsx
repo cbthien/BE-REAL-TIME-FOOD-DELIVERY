@@ -5,6 +5,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/features/auth/useAuth';
+import { ApiError } from '@/lib/api';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Label } from '@/components/ui/Label';
@@ -22,7 +23,7 @@ export default function LoginPage() {
   // Redirect if already logged in
   useEffect(() => {
     if (user && !authLoading) {
-      if (user.role === 'CUSTOMER') router.push('/(customer)/menu');
+      if (user.role === 'CUSTOMER') router.push('/menu');
       else if (user.role === 'STAFF') router.push('/(staff)/tickets');
       else if (user.role === 'DRIVER') router.push('/(driver)/jobs');
       else if (user.role === 'ADMIN') router.push('/(admin)/dashboard');
@@ -37,9 +38,12 @@ export default function LoginPage() {
     try {
       await login({ email, password });
     } catch (err) {
-      const message =
-        (err as any)?.response?.data?.message ||
-        (err instanceof Error ? err.message : 'Login failed. Please try again.');
+      let message = 'Login failed. Please try again.';
+      if (err instanceof ApiError) {
+        message = err.message;
+      } else if (err instanceof Error) {
+        message = err.message;
+      }
       setError(message);
       setLoading(false);
     }
@@ -153,3 +157,5 @@ export default function LoginPage() {
     </div>
   );
 }
+
+

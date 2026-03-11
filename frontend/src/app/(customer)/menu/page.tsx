@@ -5,7 +5,7 @@ import { useCart } from '@/features/cart';
 import type { MenuItem } from '@/types';
 
 export default function MenuPage() {
-  const { addItem } = useCart();
+  const { addItem } = useCart(); // Lấy hàm addItem từ CartContext để thêm món vào giỏ hàng
 
   const handleAddToCart = (item: MenuItem) => {
     addItem(item);

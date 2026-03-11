@@ -1,3 +1,7 @@
+// Chức năng của CartSummary:
+// Hiển thị số lượng items, subtotal (tổng tiền item).
+// Tính và hiển thị tổng cuối cùng
+// Nút “Checkout / Place order” gọi callback
 'use client';
 
 import { useCart } from './CartContext';

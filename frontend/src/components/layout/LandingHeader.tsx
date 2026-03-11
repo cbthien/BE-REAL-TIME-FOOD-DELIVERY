@@ -2,9 +2,10 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Menu, ShoppingCart, X, ChevronDown, User } from 'lucide-react';
+import { Menu, ShoppingCart, X, ChevronDown, User, ShoppingBag } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { motion, AnimatePresence } from 'framer-motion';
+import { CartSidebar } from '@/components/shared/CartSidebar';
 
 /**
  * LandingHeader Component
@@ -12,12 +13,14 @@ import { motion, AnimatePresence } from 'framer-motion';
  */
 export function LandingHeader() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [language, setLanguage] = useState<'EN' | 'VN'>('EN');
+  const [isCartOpen, setIsCartOpen] = useState(false);
+  const [language, setLanguage] = useState<'EN' | 'VN'>('VN');
 
   // Navigation links
   const navLinks = [
     { href: '/promotions', label: 'Promotions' },
     { href: '/menu', label: 'Menu' },
+    { href: '/store-locator', label: 'Store Locator' },
     { href: '/about', label: 'About Us' },
   ];
 
@@ -53,44 +56,52 @@ export function LandingHeader() {
             ))}
           </nav>
 
-          {/* Right Section: Language, User, Cart */}
+          {/* Right Section: Language, User, Cart, Auth */}
           <div className="flex items-center gap-4">
             {/* Language Switcher */}
-            <div className="relative group hidden sm:block">
-              <button className="flex items-center gap-1 text-sm font-medium text-gray-700 hover:text-red-600 transition-colors">
-                <span>{language}</span>
-                <ChevronDown className="w-4 h-4" />
+            <div className="hidden sm:flex items-center gap-2 text-sm font-semibold text-gray-400">
+              <button 
+                onClick={() => setLanguage('VN')}
+                className={`transition-colors ${language === 'VN' ? 'text-red-600' : 'hover:text-red-500'}`}
+              >
+                VN
               </button>
-              <div className="absolute right-0 mt-2 w-24 bg-white rounded-lg shadow-lg border border-gray-200 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all">
-                <button
-                  onClick={() => setLanguage('VN')}
-                  className="block w-full px-4 py-2 text-sm text-left hover:bg-gray-50 rounded-t-lg"
-                >
-                  VN
-                </button>
-                <button
-                  onClick={() => setLanguage('EN')}
-                  className="block w-full px-4 py-2 text-sm text-left hover:bg-gray-50 rounded-b-lg"
-                >
-                  EN
-                </button>
-              </div>
+              <span className="text-gray-300">|</span>
+              <button 
+                onClick={() => setLanguage('EN')}
+                className={`transition-colors ${language === 'EN' ? 'text-red-600' : 'hover:text-red-500'}`}
+              >
+                EN
+              </button>
             </div>
 
             {/* User Icon */}
-            <Link href="/login" className="hidden sm:block">
-              <Button variant="ghost" size="icon" className="hover:bg-gray-100">
-                <User className="w-5 h-5" />
+            <Link href="/profile" className="hidden sm:block">
+              <Button variant="ghost" size="icon" className="hover:bg-gray-100 rounded-full w-8 h-8">
+                <User className="w-5 h-5 text-gray-700" />
               </Button>
             </Link>
 
             {/* Cart Button */}
-            <Link href="/cart">
-              <Button className="bg-red-600 hover:bg-red-700 text-white font-semibold px-4 py-2 rounded-full flex items-center gap-2">
-                <ShoppingCart className="w-5 h-5" />
-                <span className="hidden sm:inline">$45.00</span>
-              </Button>
-            </Link>
+            <button 
+              onClick={() => setIsCartOpen(true)}
+              className="bg-red-600 hover:bg-red-700 text-white font-semibold px-4 py-2 rounded-full flex items-center gap-2 text-sm"
+            >
+              <ShoppingBag className="w-4 h-4" />
+              <span>Giỏ hàng</span>
+            </button>
+
+            {/* Auth Buttons */}
+            <div className="hidden lg:flex items-center gap-4 ml-2">
+              <Link href="/login" className="text-sm font-semibold text-gray-700 hover:text-red-600 transition-colors">
+                Sign In
+              </Link>
+              <Link href="/register">
+                <Button className="bg-[#1e233a] hover:bg-gray-800 text-white font-semibold px-5 py-2 rounded-full text-sm">
+                  Sign Up
+                </Button>
+              </Link>
+            </div>
 
             {/* Mobile Menu Toggle */}
             <button
@@ -142,6 +153,27 @@ export function LandingHeader() {
           )}
         </AnimatePresence>
       </div>
+
+      <CartSidebar 
+        isOpen={isCartOpen}
+        onClose={() => setIsCartOpen(false)}
+        items={[
+          {
+            id: '1',
+            name: 'Crispy Drumsticks (6pcs)',
+            price: 129000,
+            image: 'https://images.unsplash.com/photo-1626082927389-6cd097cdc6ec?q=80&w=2070',
+            quantity: 1
+          },
+          {
+            id: '2',
+            name: 'Spicy Zinger Burger',
+            price: 89000,
+            image: 'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?q=80&w=2070',
+            quantity: 1
+          }
+        ]}
+      />
     </header>
   );
 }

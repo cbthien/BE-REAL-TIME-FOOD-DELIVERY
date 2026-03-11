@@ -3,16 +3,19 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import type { MenuItem, OrderItem } from '@/types';
 
+// Cart context contract: exposes cart state + mutations used across pages.
 interface CartContextValue {
-  items: OrderItem[];
-  totalAmount: number;
-  itemCount: number;
-  addItem: (menuItem: MenuItem, quantity?: number) => void;
-  removeItem: (id: string) => void;
-  updateQuantity: (id: string, quantity: number) => void;
-  clearCart: () => void;
+  items: OrderItem[];        // Source of truth for cart content
+  totalAmount: number;       // Derived: sum(unitPrice * quantity)
+  itemCount: number;         // Derived: sum(quantity)
+  addItem: (menuItem: MenuItem, quantity?: number) => void;  // Adds or increments item
+  removeItem: (id: string) => void;                          // Removes by cart item id
+  updateQuantity: (id: string, quantity: number) => void;    // If quantity <= 0 -> remove
+  clearCart: () => void;                                     // Empties the cart
 }
 
+
+// Cart state cho toàn bộ app
 const CartContext = createContext<CartContextValue | undefined>(undefined);
 
 function cartItemsFromStorage(): OrderItem[] {
@@ -32,6 +35,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const totalAmount = items.reduce((sum, item) => sum + item.unitPrice * item.quantity, 0);
   const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
 
+  // Add item to cart 
   const addItem = (menuItem: MenuItem, quantity = 1) => {
     setItems((prev) => {
       const existing = prev.find((item) => item.menuItemId === menuItem.id);
@@ -54,11 +58,12 @@ export function CartProvider({ children }: { children: ReactNode }) {
       ];
     });
   };
-
+  // Remove item from cart
   const removeItem = (id: string) => {
     setItems((prev) => prev.filter((item) => item.id !== id));
   };
 
+  // Update quantity of an item in cart
   const updateQuantity = (id: string, quantity: number) => {
     if (quantity <= 0) {
       removeItem(id);
