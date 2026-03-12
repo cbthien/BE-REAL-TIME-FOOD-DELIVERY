@@ -8,7 +8,6 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { Order } from './order.entity';
-import { MenuItem } from './menu-item.entity';
 
 @Entity({ name: 'order_items' })
 export class OrderItem {
@@ -28,15 +27,37 @@ export class OrderItem {
   @Column({ name: 'menu_item_id', type: 'bigint' })
   menuItemId: number;
 
-  @ManyToOne(() => MenuItem, { nullable: false, eager: true })
-  @JoinColumn({ name: 'menu_item_id' })
-  menuItem: MenuItem;
+  @Column({ name: 'menu_item_name', type: 'varchar', length: 255 })
+  menuItemName: string;
+
+  @Column({
+    name: 'menu_item_description',
+    type: 'text',
+    nullable: true,
+  })
+  menuItemDescription: string | null;
+
+  @Column({
+    name: 'menu_item_image_url',
+    type: 'varchar',
+    length: 500,
+    nullable: true,
+  })
+  menuItemImageUrl: string | null;
+
+  @Column({
+    name: 'menu_item_category_name',
+    type: 'varchar',
+    length: 255,
+    nullable: true,
+  })
+  menuItemCategoryName: string | null;
 
   @Column({ type: 'int' })
   quantity: number;
 
-  @Column({ type: 'numeric', precision: 12, scale: 2 })
-  price: string;
+  @Column({ type: 'int' })
+  price: number;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamp' })
   createdAt: Date;

@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Customer } from 'src/entities/customer.entity';
-import { Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 
 @Injectable()
 export class CustomerRepository {
@@ -10,16 +10,29 @@ export class CustomerRepository {
     private readonly repository: Repository<Customer>,
   ) {}
 
-  async findByUserId(userId: string): Promise<Customer | null> {
-    return this.repository.findOne({
-      where: {
-        userId,
-      },
-      relations: ['user', 'defaultAddress', 'cart'],
+  async findByUserId(
+    userId: string,
+    manager?: EntityManager,
+  ): Promise<Customer | null> {
+    const repo = manager
+      ? manager.getRepository(Customer)
+      : this.repository;
+
+    return repo.findOne({
+      where: { userId },
+      relations: ['user', 'defaultAddress', 'wallet'],
     });
   }
 
-  async save(customer: Customer): Promise<Customer> {
-    return this.repository.save(customer);
+  async save(
+    customer: Customer,
+    manager?: EntityManager,
+  ): Promise<Customer> {
+    const repo = manager
+      ? manager.getRepository(Customer)
+      : this.repository;
+
+    return repo.save(customer);
   }
 }
+

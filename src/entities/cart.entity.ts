@@ -4,7 +4,7 @@ import {
   Entity,
   JoinColumn,
   OneToMany,
-  OneToOne,
+  ManyToOne,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
@@ -17,10 +17,11 @@ export class Cart {
   @PrimaryGeneratedColumn({ type: 'bigint' })
   id: string;
 
-  @Column({ name: 'customer_id', type: 'bigint', unique: true })
+  @Column({ name: 'customer_id', type: 'bigint' })
   customerId: string;
 
-  @OneToOne(() => Customer, (customer) => customer.cart, {
+  @ManyToOne(() => Customer, (customer) => customer.carts, {
+    nullable: false,
     onDelete: 'CASCADE',
   })
   @JoinColumn({

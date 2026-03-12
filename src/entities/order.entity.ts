@@ -54,12 +54,10 @@ export class Order {
 
   @Column({
     name: 'total_amount',
-    type: 'numeric',
-    precision: 12,
-    scale: 2,
-    default: '0',
+    type: 'int',
+    default: 0,
   })
-  totalAmount: string;
+  totalAmount: number;
 
   @OneToMany(() => OrderItem, (orderItem) => orderItem.order, {
     cascade: false,

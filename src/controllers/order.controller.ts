@@ -4,6 +4,7 @@ import {
   Get,
   Param,
   Post,
+  Patch,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -38,5 +39,14 @@ export class OrderController {
     @Param('id') orderId: string,
   ) {
     return this.orderService.getMyOrderDetail(user.id, orderId);
+  }
+
+  @ApiOperation({ summary: 'Customer cancel my order' })
+  @Patch(':id/cancel')
+  async cancelMyOrder(
+    @CurrentUser() user: any,
+    @Param('id') orderId: string,
+  ) {
+    return this.orderService.cancelMyOrder(user.id, orderId);
   }
 }

@@ -5,10 +5,12 @@ import {
   JoinColumn,
   CreateDateColumn,
   ManyToOne,
+  OneToMany,
 } from 'typeorm';
 import { User } from './user.entity';
 import { Address } from './address.entity';
 import { Cart } from './cart.entity';
+import { Wallet } from './wallet.entity';
 
 @Entity({ name: 'customers' })
 export class Customer {
@@ -23,9 +25,16 @@ export class Customer {
   @JoinColumn({ name: 'default_address_id' })
   defaultAddress?: Address;
 
-  @OneToOne(() => Cart, (cart) => cart.customer)
-  cart: Cart;
+  @OneToMany(() => Cart, (cart) => cart.customer)
+  carts: Cart[];
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamp' })
   createdAt: Date;
+
+  /**
+   * Inverse side — Wallet owns the FK (customer_id).
+   * No @JoinColumn here because the FK lives in wallets table.
+   */
+  @OneToOne(() => Wallet, (wallet) => wallet.customer)
+  wallet: Wallet;
 }

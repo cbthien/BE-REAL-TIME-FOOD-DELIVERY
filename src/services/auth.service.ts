@@ -5,10 +5,12 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { JwtService } from '@nestjs/jwt';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 
 import { User } from '../entities/user.entity';
+import { Customer } from '../entities/customer.entity';
+import { Wallet } from '../entities/wallet.entity';
 import { LoginDto } from '../dto/auth/login.dto';
 import { RegisterDto } from '../dto/auth/register.dto';
 import { UserRole } from '../enums/user-role.enum';
@@ -19,6 +21,7 @@ export class AuthService {
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     private readonly jwtService: JwtService,
+    private readonly dataSource: DataSource,
   ) {}
 
   async registerCustomer(dto: RegisterDto) {
@@ -32,16 +35,33 @@ export class AuthService {
 
     const passwordHash = await bcrypt.hash(dto.password, 10);
 
-    const user = this.userRepository.create({
-      email: dto.email,
-      passwordHash,
-      fullName: dto.fullName,
-      phone: dto.phone,
-      role: UserRole.CUSTOMER,
-      isActive: true,
-    });
+    const savedUser = await this.dataSource.transaction(async (manager) => {
+      const user = manager.create(User, {
+        email: dto.email,
+        passwordHash,
+        fullName: dto.fullName,
+        phone: dto.phone,
+        role: UserRole.CUSTOMER,
+        isActive: true,
+      });
 
-    const savedUser = await this.userRepository.save(user);
+      const createdUser = await manager.save(User, user);
+
+      const customer = manager.create(Customer, {
+        userId: createdUser.id,
+      });
+
+      await manager.save(Customer, customer);
+
+      const wallet = manager.create(Wallet, {
+        customer,
+        balance: 0,
+      });
+
+      await manager.save(Wallet, wallet);
+
+      return createdUser;
+    });
 
     const payload = {
       sub: savedUser.id,

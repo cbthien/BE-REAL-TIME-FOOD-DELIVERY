@@ -18,6 +18,8 @@ import { Cart } from './entities/cart.entity';
 import { CartItem } from './entities/cart-item.entity';
 import { Order } from './entities/order.entity';
 import { OrderItem } from './entities/order-item.entity';
+import { Wallet } from './entities/wallet.entity';
+import { WalletTransaction } from './entities/wallet-transaction.entity';
 
 import { AuthController } from './controllers/auth.controller';
 import { MenuController } from './controllers/menu.controller';
@@ -30,6 +32,7 @@ import { CartService } from './services/cart.service';
 import { OrderService } from './services/order.service';
 
 import { JwtStrategy } from './auth/jwt.strategy';
+import { AuthModule } from './auth/auth.module';
 
 import { MenuCategoryRepository } from './repositories/menu-category.repository';
 import { MenuItemRepository } from './repositories/menu-item.repository';
@@ -38,6 +41,8 @@ import { CartRepository } from './repositories/cart.repository';
 import { CartItemRepository } from './repositories/cart-item.repository';
 import { OrderRepository } from './repositories/order.repository';
 import { OrderItemRepository } from './repositories/order-item.repository';
+import { WalletRepository } from './repositories/wallet.repository';
+import { WalletTransactionRepository} from './repositories/wallet-transaction.repository';
 
 import { MenuSeedService } from './seeds/menu.seed';
 import { AdminSeedService } from './seeds/admin.seed';
@@ -45,7 +50,7 @@ import { AdminSeedService } from './seeds/admin.seed';
 @Module({
   imports: [
     TypeOrmModule.forRoot(databaseConfig),
-
+    
     TypeOrmModule.forFeature([
       User,
       Customer,
@@ -59,9 +64,11 @@ import { AdminSeedService } from './seeds/admin.seed';
       CartItem,
       Order,
       OrderItem,
+      Wallet,
+      WalletTransaction,
     ]),
 
-    PassportModule,
+    AuthModule,
 
     JwtModule.register({
       secret: jwtConfig.secret,
@@ -82,15 +89,17 @@ import { AdminSeedService } from './seeds/admin.seed';
     AuthService,
     MenuService,
     CartService,
+    OrderService,
     JwtStrategy,
     MenuCategoryRepository,
     MenuItemRepository,
     CustomerRepository,
     CartRepository,
     CartItemRepository,
-    OrderService,
     OrderRepository,
     OrderItemRepository,
+    WalletRepository,
+    WalletTransactionRepository,
 
     MenuSeedService,
     AdminSeedService,
