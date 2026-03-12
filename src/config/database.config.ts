@@ -9,6 +9,8 @@ import { MenuItem } from 'src/entities/menu-item.entity';
 import { MenuItemImage } from 'src/entities/menu-item-image.entity';
 import { Cart } from 'src/entities/cart.entity';
 import { CartItem } from 'src/entities/cart-item.entity';
+import { Order } from 'src/entities/order.entity';
+import { OrderItem } from 'src/entities/order-item.entity';
 
 export const databaseConfig: TypeOrmModuleOptions = {
   type: 'postgres',
@@ -30,5 +32,7 @@ export const databaseConfig: TypeOrmModuleOptions = {
     MenuItemImage,
     Cart,
     CartItem,
+    Order,
+    OrderItem,
   ],
 };

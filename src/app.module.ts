@@ -16,14 +16,18 @@ import { MenuItem } from './entities/menu-item.entity';
 import { MenuItemImage } from './entities/menu-item-image.entity';
 import { Cart } from './entities/cart.entity';
 import { CartItem } from './entities/cart-item.entity';
+import { Order } from './entities/order.entity';
+import { OrderItem } from './entities/order-item.entity';
 
 import { AuthController } from './controllers/auth.controller';
 import { MenuController } from './controllers/menu.controller';
 import { CartController } from './controllers/cart.controller';
+import { OrderController } from './controllers/order.controller';
 
 import { AuthService } from './services/auth.service';
 import { MenuService } from './services/menu.service';
 import { CartService } from './services/cart.service';
+import { OrderService } from './services/order.service';
 
 import { JwtStrategy } from './auth/jwt.strategy';
 
@@ -32,6 +36,11 @@ import { MenuItemRepository } from './repositories/menu-item.repository';
 import { CustomerRepository } from './repositories/customer.repository';
 import { CartRepository } from './repositories/cart.repository';
 import { CartItemRepository } from './repositories/cart-item.repository';
+import { OrderRepository } from './repositories/order.repository';
+import { OrderItemRepository } from './repositories/order-item.repository';
+
+import { MenuSeedService } from './seeds/menu.seed';
+import { AdminSeedService } from './seeds/admin.seed';
 
 @Module({
   imports: [
@@ -48,6 +57,8 @@ import { CartItemRepository } from './repositories/cart-item.repository';
       MenuItemImage,
       Cart,
       CartItem,
+      Order,
+      OrderItem,
     ]),
 
     PassportModule,
@@ -64,6 +75,7 @@ import { CartItemRepository } from './repositories/cart-item.repository';
     AuthController,
     MenuController,
     CartController,
+    OrderController,
   ],
 
   providers: [
@@ -76,7 +88,12 @@ import { CartItemRepository } from './repositories/cart-item.repository';
     CustomerRepository,
     CartRepository,
     CartItemRepository,
-  ],
+    OrderService,
+    OrderRepository,
+    OrderItemRepository,
 
+    MenuSeedService,
+    AdminSeedService,
+  ],
 })
 export class AppModule {}
