@@ -1,4 +1,4 @@
 export const jwtConfig = {
-  secret: 'super-secret-key',
-  expiresIn: '7d' as const,
+  secret: 'QBqojzeCvz8A+msvT3OfrcEJrEJAqSdXawPvu7cx4po=',
+  expiresIn: '1d' as const,
 };

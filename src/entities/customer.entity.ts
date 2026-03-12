@@ -8,6 +8,7 @@ import {
 } from 'typeorm';
 import { User } from './user.entity';
 import { Address } from './address.entity';
+import { Cart } from './cart.entity';
 
 @Entity({ name: 'customers' })
 export class Customer {
@@ -21,6 +22,9 @@ export class Customer {
   @ManyToOne(() => Address, { nullable: true })
   @JoinColumn({ name: 'default_address_id' })
   defaultAddress?: Address;
+
+  @OneToOne(() => Cart, (cart) => cart.customer)
+  cart: Cart;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamp' })
   createdAt: Date;

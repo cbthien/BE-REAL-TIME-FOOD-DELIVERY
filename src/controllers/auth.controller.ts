@@ -9,7 +9,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 
 
 @Controller('auth')
-@ApiTags('Auth')
+@ApiTags('Authentication')
 @ApiBearerAuth()
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
