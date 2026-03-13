@@ -24,7 +24,7 @@ export class OrderItem {
   @JoinColumn({ name: 'order_id' })
   order: Order;
 
-  @Column({ name: 'menu_item_id', type: 'bigint' })
+  @Column({ name: 'menu_item_id', type: 'int' })
   menuItemId: number;
 
   @Column({ name: 'menu_item_name', type: 'varchar', length: 255 })

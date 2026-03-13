@@ -158,12 +158,12 @@ export class CartService {
           id: item.menuItem.id,
           name: item.menuItem.name,
           description: item.menuItem.description ?? null,
-          price: Number(item.menuItem.price),
+          price: item.menuItem.price,
           imageUrl: firstImage ? firstImage.imageUrl : null,
           category: item.menuItem.category?.name ?? null,
           available: item.menuItem.isAvailable,
         },
-        lineTotal: Number(item.menuItem.price) * item.quantity,
+        lineTotal: item.menuItem.price * item.quantity,
       };
     });
 

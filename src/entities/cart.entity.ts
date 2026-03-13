@@ -2,6 +2,7 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   JoinColumn,
   OneToMany,
   ManyToOne,
@@ -12,6 +13,16 @@ import { Customer } from './customer.entity';
 import { CartItem } from './cart-item.entity';
 import { CartStatus } from 'src/enums/cart-status.enum';
 
+/**
+ * Mỗi customer chỉ có tối đa 1 ACTIVE cart.
+ *
+ * Constraint được enforce bởi PostgreSQL partial unique index:
+ *   CREATE UNIQUE INDEX "UQ_one_active_cart_per_customer"
+ *   ON "carts" ("customer_id") WHERE "status" = 'ACTIVE'
+ *
+ * TypeORM không hỗ trợ partial unique index qua decorator,
+ * nên constraint này được tạo bằng migration.
+ */
 @Entity({ name: 'carts' })
 export class Cart {
   @PrimaryGeneratedColumn({ type: 'bigint' })

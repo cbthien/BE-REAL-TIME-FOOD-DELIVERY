@@ -54,7 +54,7 @@ export class AuthService {
       await manager.save(Customer, customer);
 
       const wallet = manager.create(Wallet, {
-        customer,
+        customerId: createdUser.id,
         balance: 0,
       });
 
