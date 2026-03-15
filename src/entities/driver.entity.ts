@@ -4,10 +4,12 @@ import {
   Column,
   OneToOne,
   JoinColumn,
-  ManyToOne,
   CreateDateColumn,
+  OneToMany,
 } from 'typeorm';
 import { User } from './user.entity';
+import { Order } from './order.entity';
+import { DriverStatus } from 'src/enums/driver-status.enum';
 
 @Entity({ name: 'drivers' })
 export class Driver {
@@ -19,11 +21,11 @@ export class Driver {
   user: User;
 
   @Column({
-    type: 'varchar',
-    length: 20,
-    default: 'PENDING',
+    type: 'enum',
+    enum: DriverStatus,
+    default: DriverStatus.ACTIVE,
   })
-  status: string;
+  status: DriverStatus;
 
   @Column({
     name: 'is_online',
@@ -48,23 +50,8 @@ export class Driver {
   })
   licensePlate?: string;
 
-  @Column({
-    name: 'approved_by_user_id',
-    type: 'bigint',
-    nullable: true,
-  })
-  approvedByUserId?: string;
-
-  @ManyToOne(() => User)
-  @JoinColumn({ name: 'approved_by_user_id' })
-  approvedBy?: User;
-
-  @Column({
-    name: 'approved_at',
-    type: 'timestamp',
-    nullable: true,
-  })
-  approvedAt?: Date;
+  @OneToMany(() => Order, (order) => order.driver)
+  orders: Order[];
 
   @CreateDateColumn({
     name: 'created_at',

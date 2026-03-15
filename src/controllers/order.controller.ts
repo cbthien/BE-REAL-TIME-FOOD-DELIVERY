@@ -49,4 +49,13 @@ export class OrderController {
   ) {
     return this.orderService.cancelMyOrder(user.id, orderId);
   }
+
+  @ApiOperation({ summary: 'Customer confirm delivered' })
+  @Patch(':id/confirm-delivered')
+  async confirmDelivered(
+    @CurrentUser() user: any,
+    @Param('id') orderId: string,
+  ) {
+    return this.orderService.confirmDelivered(user.id, orderId);
+  }
 }

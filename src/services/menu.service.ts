@@ -89,6 +89,23 @@ export class MenuService {
     return this.menuItemRepository.save(menuItem);
   }
 
+  async updateAvailability(id: number, isAvailable: boolean): Promise<MenuItem> {
+    const menuItem = await this.menuItemRepository.findById(id);
+
+    if (!menuItem) {
+      throw new NotFoundException('Menu item not found');
+    }
+
+    if (!menuItem.isActive) {
+      throw new BadRequestException(
+        'Inactive menu item cannot be toggled by staff',
+      );
+    }
+
+    menuItem.isAvailable = isAvailable;
+    return this.menuItemRepository.save(menuItem);
+  }
+
   async getPublicMenu(queryDto: MenuQueryDto): Promise<MenuItemResponseDto[]> {
     const menuItems = await this.menuItemRepository.findPublicMenu(queryDto.category);
     return menuItems.map((menuItem) => this.toPublicResponse(menuItem));

@@ -23,7 +23,6 @@ import { OrderItemRepository } from 'src/repositories/order-item.repository';
 import { WalletRepository } from 'src/repositories/wallet.repository';
 import { WalletTransactionRepository } from 'src/repositories/wallet-transaction.repository';
 
-/** Trạng thái cho phép customer tự cancel */
 const CUSTOMER_CANCELLABLE_STATUSES: OrderStatus[] = [
   OrderStatus.PENDING,
   OrderStatus.CONFIRMED,
@@ -53,20 +52,22 @@ export class OrderService {
       const order = await this.orderRepository.create(
         {
           customerId: customer.userId,
-          customer,
           status: OrderStatus.PENDING,
           paymentMethod: dto.paymentMethod,
           paymentStatus: PaymentStatus.UNPAID,
           totalAmount,
+          driverId: null,
+          assignedAt: null,
+          pickedUpAt: null,
+          deliveredAt: null,
+          driverConfirmedDelivered: false,
+          customerConfirmedDelivered: false,
         },
         manager,
       );
 
       const orderItems = this.buildOrderItemsFromCart(cart, order);
-      order.items = await this.orderItemRepository.saveMany(
-        orderItems,
-        manager,
-      );
+      order.items = await this.orderItemRepository.saveMany(orderItems, manager);
 
       if (dto.paymentMethod === PaymentMethod.WALLET) {
         await this.payWithWallet(customer.userId, order, totalAmount, manager);
@@ -75,24 +76,29 @@ export class OrderService {
       cart.status = CartStatus.CHECKED_OUT;
       await this.cartRepository.save(cart, manager);
 
-      return this.mapOrderResponse(order);
+      const savedOrder = await this.orderRepository.findById(order.id, manager);
+      if (!savedOrder) {
+        throw new NotFoundException('Order not found after creation');
+      }
+
+      return this.mapOrderResponse(savedOrder);
     });
   }
 
   async getMyOrders(userId: string) {
     const customer = await this.customerRepository.findByUserId(userId);
+
     if (!customer) {
       throw new NotFoundException('Customer not found');
     }
 
-    const orders = await this.orderRepository.findByCustomerId(
-      customer.userId,
-    );
+    const orders = await this.orderRepository.findByCustomerId(customer.userId);
     return orders.map((order) => this.mapOrderResponse(order));
   }
 
   async getMyOrderDetail(userId: string, orderId: string) {
     const customer = await this.customerRepository.findByUserId(userId);
+
     if (!customer) {
       throw new NotFoundException('Customer not found');
     }
@@ -123,44 +129,83 @@ export class OrderService {
         throw new NotFoundException('Order not found');
       }
 
-      // ── Idempotent: đã cancel rồi thì trả luôn ──
       if (order.status === OrderStatus.CANCELLED) {
-        return this.mapOrderResponse(order);
+        const saved = await this.orderRepository.findById(order.id, manager);
+        if (!saved) {
+          throw new NotFoundException('Order not found after cancel');
+        }
+        return this.mapOrderResponse(saved);
       }
 
-      // ── Chỉ cho cancel khi PENDING hoặc CONFIRMED ──
       if (!CUSTOMER_CANCELLABLE_STATUSES.includes(order.status)) {
         throw new BadRequestException(
-          `Order cannot be cancelled at status "${order.status}". ` +
-            `Allowed: ${CUSTOMER_CANCELLABLE_STATUSES.join(', ')}`,
+          `Order cannot be cancelled at status "${order.status}".`,
         );
       }
 
-      // ── Cancel logic theo payment method ──
       if (
         order.paymentMethod === PaymentMethod.WALLET &&
         order.paymentStatus === PaymentStatus.PAID
       ) {
         await this.refundToWallet(customer.userId, order, manager);
-        // refundToWallet đã set status + paymentStatus + save
       } else {
-        // CASH (UNPAID) hoặc WALLET nhưng chưa PAID (edge case)
         order.status = OrderStatus.CANCELLED;
-        // Giữ nguyên paymentStatus hiện tại — không ghi đè
         await this.orderRepository.save(order, manager);
       }
 
-      return this.mapOrderResponse(order);
+      const updatedOrder = await this.orderRepository.findById(order.id, manager);
+      if (!updatedOrder) {
+        throw new NotFoundException('Order not found after cancel');
+      }
+
+      return this.mapOrderResponse(updatedOrder);
     });
   }
 
-  // ─── PRIVATE HELPERS ────────────────────────────────────────
+  async confirmDelivered(userId: string, orderId: string) {
+    return this.dataSource.transaction(async (manager) => {
+      const customer = await this.getCustomerOrFail(userId, manager);
+
+      const order = await this.orderRepository.findByIdAndCustomerIdForUpdate(
+        orderId,
+        customer.userId,
+        manager,
+      );
+
+      if (!order) {
+        throw new NotFoundException('Order not found');
+      }
+
+      if (order.status !== OrderStatus.PICKED_UP) {
+        throw new BadRequestException(
+          'Only PICKED_UP orders can be confirmed',
+        );
+      }
+
+      if (!order.customerConfirmedDelivered) {
+        order.customerConfirmedDelivered = true;
+
+        if (order.driverConfirmedDelivered) {
+          order.status = OrderStatus.DELIVERED;
+          order.deliveredAt = new Date();
+        }
+
+        await this.orderRepository.save(order, manager);
+      }
+
+      const updatedOrder = await this.orderRepository.findById(order.id, manager);
+      if (!updatedOrder) {
+        throw new NotFoundException(
+          'Order not found after delivery confirmation',
+        );
+      }
+
+      return this.mapOrderResponse(updatedOrder);
+    });
+  }
 
   private async getCustomerOrFail(userId: string, manager: EntityManager) {
-    const customer = await this.customerRepository.findByUserId(
-      userId,
-      manager,
-    );
+    const customer = await this.customerRepository.findByUserId(userId, manager);
 
     if (!customer) {
       throw new NotFoundException('Customer not found');
@@ -179,15 +224,17 @@ export class OrderService {
     );
 
     if (!cart) {
-      throw new BadRequestException('Active cart not found');
+      throw new BadRequestException(
+        'No active cart found. Please add items to cart again before checkout.',
+      );
     }
 
     return cart;
   }
 
   private validateCart(cart: Cart) {
-    if (!cart.items || cart.items.length === 0) {
-      throw new BadRequestException('Cart is empty');
+    if (!cart.items?.length) {
+      throw new BadRequestException('Cart empty');
     }
 
     for (const cartItem of cart.items) {
@@ -204,11 +251,10 @@ export class OrderService {
   }
 
   private calculateCartTotal(cart: Cart): number {
-    let total = 0;
-    for (const cartItem of cart.items) {
-      total += cartItem.menuItem.price * cartItem.quantity;
-    }
-    return total;
+    return cart.items.reduce(
+      (total, item) => total + item.menuItem.price * item.quantity,
+      0,
+    );
   }
 
   private buildOrderItemsFromCart(cart: Cart, order: Order): OrderItem[] {
@@ -234,17 +280,24 @@ export class OrderService {
   private async payWithWallet(
     customerId: string,
     order: Order,
-    totalAmount: number,
+    amount: number,
     manager: EntityManager,
   ) {
-    const wallet = await this.getWalletOrFail(customerId, manager);
+    const wallet = await this.walletRepository.findByCustomerIdForUpdate(
+      customerId,
+      manager,
+    );
 
-    if (wallet.balance < totalAmount) {
-      throw new BadRequestException('Insufficient wallet balance');
+    if (!wallet) {
+      throw new BadRequestException('Wallet not found');
+    }
+
+    if (wallet.balance < amount) {
+      throw new BadRequestException('Insufficient wallet');
     }
 
     const balanceBefore = wallet.balance;
-    const balanceAfter = wallet.balance - totalAmount;
+    const balanceAfter = wallet.balance - amount;
 
     wallet.balance = balanceAfter;
     await this.walletRepository.save(wallet, manager);
@@ -253,7 +306,7 @@ export class OrderService {
       {
         walletId: wallet.id,
         type: WalletTransactionType.PAYMENT,
-        amount: totalAmount,
+        amount,
         balanceBefore,
         balanceAfter,
         referenceType: 'ORDER',
@@ -272,7 +325,14 @@ export class OrderService {
     order: Order,
     manager: EntityManager,
   ) {
-    const wallet = await this.getWalletOrFail(customerId, manager);
+    const wallet = await this.walletRepository.findByCustomerIdForUpdate(
+      customerId,
+      manager,
+    );
+
+    if (!wallet) {
+      throw new BadRequestException('Wallet not found');
+    }
 
     const balanceBefore = wallet.balance;
     const refundAmount = order.totalAmount;
@@ -300,20 +360,11 @@ export class OrderService {
     await this.orderRepository.save(order, manager);
   }
 
-  private async getWalletOrFail(customerId: string, manager: EntityManager) {
-    const wallet = await this.walletRepository.findByCustomerIdForUpdate(
-      customerId,
-      manager,
-    );
-
-    if (!wallet) {
-      throw new BadRequestException('Wallet not found');
+  private mapOrderResponse(order: Order | null) {
+    if (!order) {
+      throw new NotFoundException('Order not found');
     }
 
-    return wallet;
-  }
-
-  private mapOrderResponse(order: Order) {
     const items = (order.items || []).map((item) => ({
       orderItemId: item.id,
       quantity: item.quantity,
@@ -322,21 +373,36 @@ export class OrderService {
       menuItem: {
         id: item.menuItemId,
         name: item.menuItemName,
-        description: item.menuItemDescription,
-        imageUrl: item.menuItemImageUrl,
-        category: item.menuItemCategoryName,
+        description: item.menuItemDescription ?? null,
+        imageUrl: item.menuItemImageUrl ?? null,
+        category: item.menuItemCategoryName ?? null,
       },
     }));
 
     return {
       id: order.id,
       customerId: order.customerId,
+      driverId: order.driverId,
+      driver: order.driver
+        ? {
+            userId: order.driver.userId,
+            fullName: order.driver.user?.fullName ?? null,
+            email: order.driver.user?.email ?? null,
+            phone: order.driver.user?.phone ?? null,
+          }
+        : null,
       status: order.status,
       paymentMethod: order.paymentMethod,
       paymentStatus: order.paymentStatus,
       totalAmount: order.totalAmount,
+      assignedAt: order.assignedAt,
+      pickedUpAt: order.pickedUpAt,
+      deliveredAt: order.deliveredAt,
+      driverConfirmedDelivered: order.driverConfirmedDelivered,
+      customerConfirmedDelivered: order.customerConfirmedDelivered,
       items,
       createdAt: order.createdAt,
+      updatedAt: order.updatedAt,
     };
   }
 }

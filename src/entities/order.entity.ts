@@ -9,6 +9,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { Customer } from './customer.entity';
+import { Driver } from './driver.entity';
 import { OrderItem } from './order-item.entity';
 import { OrderStatus } from 'src/enums/order-status.enum';
 import { PaymentMethod } from 'src/enums/payment-method.enum';
@@ -28,6 +29,16 @@ export class Order {
     referencedColumnName: 'userId',
   })
   customer: Customer;
+
+  @Column({ name: 'driver_id', type: 'bigint', nullable: true })
+  driverId: string | null;
+
+  @ManyToOne(() => Driver, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({
+    name: 'driver_id',
+    referencedColumnName: 'userId',
+  })
+  driver: Driver | null;
 
   @Column({
     name: 'status',
@@ -58,6 +69,41 @@ export class Order {
     default: 0,
   })
   totalAmount: number;
+
+  @Column({
+    name: 'assigned_at',
+    type: 'timestamp',
+    nullable: true,
+  })
+  assignedAt: Date | null;
+
+  @Column({
+    name: 'picked_up_at',
+    type: 'timestamp',
+    nullable: true,
+  })
+  pickedUpAt: Date | null;
+
+  @Column({
+    name: 'delivered_at',
+    type: 'timestamp',
+    nullable: true,
+  })
+  deliveredAt: Date | null;
+
+  @Column({
+    name: 'driver_confirmed_delivered',
+    type: 'boolean',
+    default: false,
+  })
+  driverConfirmedDelivered: boolean;
+
+  @Column({
+    name: 'customer_confirmed_delivered',
+    type: 'boolean',
+    default: false,
+  })
+  customerConfirmedDelivered: boolean;
 
   @OneToMany(() => OrderItem, (orderItem) => orderItem.order, {
     cascade: false,

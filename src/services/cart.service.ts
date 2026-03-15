@@ -6,7 +6,6 @@ import {
 import { AddToCartDto } from 'src/dto/cart/add-to-cart.dto';
 import { UpdateCartItemDto } from 'src/dto/cart/update-cart-item.dto';
 import { Cart } from 'src/entities/cart.entity';
-import { CartItem } from 'src/entities/cart-item.entity';
 import { MenuItemRepository } from 'src/repositories/menu-item.repository';
 import { CustomerRepository } from 'src/repositories/customer.repository';
 import { CartRepository } from 'src/repositories/cart.repository';
@@ -21,7 +20,6 @@ export class CartService {
     private readonly menuItemRepository: MenuItemRepository,
   ) {}
 
-  // ─── ADD TO CART ────────────────────────────────────────────
   async addToCart(userId: string, dto: AddToCartDto) {
     const customer = await this.getCustomerOrFail(userId);
 
@@ -29,20 +27,21 @@ export class CartService {
     if (!menuItem) {
       throw new NotFoundException('Menu item not found');
     }
-    if (!menuItem.isAvailable) {
+
+    if (!menuItem.isActive || !menuItem.isAvailable) {
       throw new BadRequestException('Menu item is not available');
     }
 
-    const cart = await this.cartRepository.findOrCreateActiveCart(
-      customer.userId,
-    );
+    // Cách A:
+    // Nếu cart ACTIVE cũ không còn (vì đã checkout), tự tạo cart ACTIVE mới
+    await this.cartRepository.findOrCreateActiveCart(customer.userId);
 
     try {
       await this.cartRepository.withActiveCartLocked(
         customer.userId,
-        async (_lockedCart, manager) => {
+        async (lockedCart, manager) => {
           await this.cartItemRepository.addOrUpdateItem(
-            _lockedCart.id,
+            lockedCart.id,
             dto.menuItemId,
             dto.quantity,
             manager,
@@ -52,24 +51,28 @@ export class CartService {
     } catch (error: any) {
       if (error.message === 'ACTIVE_CART_NOT_FOUND') {
         throw new BadRequestException(
-          'Your cart was just checked out. Please try again.',
+          'Your previous cart was already checked out. Please add the item again.',
         );
       }
       throw error;
     }
 
-    // Re-fetch đầy đủ relations cho response
     const updatedCart = await this.cartRepository.findActiveCartByCustomerId(
       customer.userId,
     );
 
-    return this.mapCartResponse(updatedCart!);
+    if (!updatedCart) {
+      throw new BadRequestException('Active cart not found after update');
+    }
+
+    return this.mapCartResponse(updatedCart);
   }
 
-  // ─── GET MY CART ────────────────────────────────────────────
   async getMyCart(userId: string) {
     const customer = await this.getCustomerOrFail(userId);
 
+    // Cách A:
+    // Nếu chưa có ACTIVE cart thì tạo mới luôn
     const cart = await this.cartRepository.findOrCreateActiveCart(
       customer.userId,
     );
@@ -77,7 +80,6 @@ export class CartService {
     return this.mapCartResponse(cart);
   }
 
-  // ─── UPDATE CART ITEM ───────────────────────────────────────
   async updateCartItem(
     userId: string,
     cartItemId: string,
@@ -88,15 +90,13 @@ export class CartService {
     await this.cartRepository.withActiveCartLocked(
       customer.userId,
       async (lockedCart, manager) => {
-        const cartItem = lockedCart.items.find(
-          (item) => item.id === cartItemId,
-        );
+        const cartItem = lockedCart.items.find((item) => item.id === cartItemId);
 
         if (!cartItem) {
           throw new NotFoundException('Cart item not found');
         }
 
-        if (!cartItem.menuItem.isAvailable) {
+        if (!cartItem.menuItem.isActive || !cartItem.menuItem.isAvailable) {
           throw new BadRequestException('Menu item is not available');
         }
 
@@ -109,19 +109,20 @@ export class CartService {
       customer.userId,
     );
 
-    return this.mapCartResponse(updatedCart!);
+    if (!updatedCart) {
+      throw new BadRequestException('Active cart not found');
+    }
+
+    return this.mapCartResponse(updatedCart);
   }
 
-  // ─── REMOVE CART ITEM ──────────────────────────────────────
   async removeCartItem(userId: string, cartItemId: string) {
     const customer = await this.getCustomerOrFail(userId);
 
     await this.cartRepository.withActiveCartLocked(
       customer.userId,
       async (lockedCart, manager) => {
-        const cartItem = lockedCart.items.find(
-          (item) => item.id === cartItemId,
-        );
+        const cartItem = lockedCart.items.find((item) => item.id === cartItemId);
 
         if (!cartItem) {
           throw new NotFoundException('Cart item not found');
@@ -135,10 +136,13 @@ export class CartService {
       customer.userId,
     );
 
-    return this.mapCartResponse(updatedCart!);
+    if (!updatedCart) {
+      throw new BadRequestException('Active cart not found');
+    }
+
+    return this.mapCartResponse(updatedCart);
   }
 
-  // ─── HELPERS ────────────────────────────────────────────────
   private async getCustomerOrFail(userId: string) {
     const customer = await this.customerRepository.findByUserId(userId);
     if (!customer) {
