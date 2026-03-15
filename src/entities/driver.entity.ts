@@ -5,6 +5,7 @@ import {
   OneToOne,
   JoinColumn,
   CreateDateColumn,
+  UpdateDateColumn,
   OneToMany,
 } from 'typeorm';
 import { User } from './user.entity';
@@ -58,4 +59,10 @@ export class Driver {
     type: 'timestamp',
   })
   createdAt: Date;
+
+  @UpdateDateColumn({
+    name: 'updated_at',
+    type: 'timestamp',
+  })
+  updatedAt: Date;
 }

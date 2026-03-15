@@ -28,6 +28,7 @@ import { StaffOrderController } from './controllers/staff-order.controller';
 import { DriverOrderController } from './controllers/driver-order.controller';
 import { StaffMenuController } from './controllers/staff-menu.controller';
 import { AdminController } from './controllers/admin.controller';
+import { DriverProfileController } from './controllers/driver-profile.controller';
 
 import { AuthService } from './services/auth.service';
 import { MenuService } from './services/menu.service';
@@ -36,6 +37,7 @@ import { OrderService } from './services/order.service';
 import { StaffOrderService } from './services/staff-order.service';
 import { DriverOrderService } from './services/driver-order.service';
 import { AdminService } from './services/admin.service';
+import { DriverProfileService } from './services/driver-profile.service';
 
 import { JwtStrategy } from './auth/jwt.strategy';
 import { AuthModule } from './auth/auth.module';
@@ -53,6 +55,7 @@ import { WalletTransactionRepository } from './repositories/wallet-transaction.r
 
 import { MenuSeedService } from './seeds/menu.seed';
 import { AdminSeedService } from './seeds/admin.seed';
+
 
 
 @Module({
@@ -91,6 +94,7 @@ import { AdminSeedService } from './seeds/admin.seed';
     DriverOrderController,
     StaffMenuController,
     AdminController,
+    DriverProfileController,
   ],
   providers: [
     AuthService,
@@ -100,6 +104,7 @@ import { AdminSeedService } from './seeds/admin.seed';
     StaffOrderService,
     DriverOrderService,
     AdminService,
+    DriverProfileService,
     JwtStrategy,
     MenuCategoryRepository,
     MenuItemRepository,
@@ -113,6 +118,7 @@ import { AdminSeedService } from './seeds/admin.seed';
     WalletTransactionRepository,
     MenuSeedService,
     AdminSeedService,
+    
     
   ],
 })
