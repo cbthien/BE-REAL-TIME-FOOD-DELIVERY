@@ -90,7 +90,9 @@ export class CartService {
     await this.cartRepository.withActiveCartLocked(
       customer.userId,
       async (lockedCart, manager) => {
-        const cartItem = lockedCart.items.find((item) => item.id === cartItemId);
+        const cartItem = lockedCart.items.find(
+          (item) => item.id === cartItemId,
+        );
 
         if (!cartItem) {
           throw new NotFoundException('Cart item not found');
@@ -122,7 +124,9 @@ export class CartService {
     await this.cartRepository.withActiveCartLocked(
       customer.userId,
       async (lockedCart, manager) => {
-        const cartItem = lockedCart.items.find((item) => item.id === cartItemId);
+        const cartItem = lockedCart.items.find(
+          (item) => item.id === cartItemId,
+        );
 
         if (!cartItem) {
           throw new NotFoundException('Cart item not found');
