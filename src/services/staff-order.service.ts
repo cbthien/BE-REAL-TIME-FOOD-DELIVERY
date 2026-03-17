@@ -170,6 +170,23 @@ export class StaffOrderService {
     });
   }
 
+  async getAvailableDrivers() {
+  const drivers = await this.driverRepository.findAvailableDrivers();
+
+  return drivers.map((driver) => ({
+    userId: driver.userId,
+    fullName: driver.user?.fullName ?? null,
+    email: driver.user?.email ?? null,
+    phone: driver.user?.phone ?? null,
+    userIsActive: driver.user?.isActive ?? false,
+    status: driver.status,
+    isOnline: driver.isOnline,
+    vehicleType: driver.vehicleType,
+    licensePlate: driver.licensePlate,
+    updatedAt: driver.updatedAt,
+  }));
+}
+
   private validateTransition(
     currentStatus: OrderStatus,
     nextStatus: OrderStatus,

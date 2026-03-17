@@ -25,6 +25,12 @@ import { StaffOrderService } from 'src/services/staff-order.service';
 export class StaffOrderController {
   constructor(private readonly staffOrderService: StaffOrderService) {}
 
+  @ApiOperation({ summary: 'Get available online drivers for staff assignment' })
+  @Get('available-drivers')
+  async getAvailableDrivers() {
+    return this.staffOrderService.getAvailableDrivers();
+  }
+
   @ApiOperation({ summary: 'Get all orders for staff' })
   @Get()
   async getAllOrders(@Query() query: StaffOrderQueryDto) {
