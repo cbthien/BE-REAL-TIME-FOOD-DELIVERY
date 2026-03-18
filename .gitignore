@@ -36,3 +36,7 @@ coverage/
 # Docker volumes
 postgres_data/
 
+.github/
+.kilo/
+
+Take-note.txt

@@ -1,0 +1,2 @@
+Issue Identified: The login endpoint initially returned 401 Unauthorized because the global AuthGuard blocked it. The login and register endpoints were missing the @Public() decorator.
+Fix Implemented: Added @Public() decorator to login and register methods in AuthController. User Data: Reset the seed data to ensure the test user customer@test.com has the correct password (123456) and the newly added name field ("Customer User").

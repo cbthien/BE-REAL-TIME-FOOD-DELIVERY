@@ -1,1 +1,0 @@
-// Reacts OrderPlaced → create ticket

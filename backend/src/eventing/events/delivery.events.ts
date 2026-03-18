@@ -1,1 +1,0 @@
-// DeliveryAccepted, PickedUp, Delivered events

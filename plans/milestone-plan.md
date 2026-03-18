@@ -1,5 +1,8 @@
 # Food Delivery - Milestone Plan (Tuần 1-11)
 
+> **Scope**: Demo cho giảng viên, 4-7 concurrent users, không production.
+> **Architecture**: Layered Architecture + Client-Server, implemented as a Modular Monolith backend with Event-Driven module communication and Feature-based Frontend.
+
 ## Tổng quan Team & Phân công
 
 | Thành viên | Vai trò | Flows phụ trách | Modules |
@@ -17,20 +20,98 @@
 | **Flow 1** | Ordering | Customer đặt hàng → Menu, Cart, Order | BE1 | FE1 |
 | **Flow 2** | Order Processing | Staff xử lý đơn → Queue, Accept/Reject/Ready | BE2 | FE1 |
 | **Flow 3** | Delivery | Driver nhận đơn → Jobs, Accept, Pickup, Complete | BE2 | FE2 |
-| **Flow 4** | Tracking | Realtime GPS → Driver location, Customer tracking | BE1 | FE2 |
+| **Flow 4** | Tracking | Realtime location → Driver gửi vị trí, Customer xem map | BE1 | FE2 |
 
 ### Supporting Flows
 | Flow | Tên | Mô tả | Backend | Frontend |
 |------|-----|-------|---------|----------|
 | **Flow 5** | Driver Recruitment | Driver apply → Admin approve/reject | BE1 | FE1 + FE2 |
-| **Flow 6** | Admin Dashboard | Statistics, Reports, Management | BE2 | FE2 |
+| **Flow 6** | Admin Dashboard | Statistics + Menu Management | BE2 | FE2 |
 
 ## Tech Stack
 
-- **Backend**: NestJS + MongoDB (Mongoose), Modular Monolith + Event-Driven
-- **Frontend**: Next.js 16 + React 19, Feature modules (BCE pattern)
-- **Realtime**: WebSocket (Nest Gateway)
+- **Backend**: NestJS + MongoDB (Mongoose), Layered Backend inside Modular Monolith + Event-Driven
+- **Frontend**: Next.js 16 + React 19, Feature-based modules (`features/` pattern)
+- **Realtime**: WebSocket (Nest Gateway + Socket.IO)
 - **Maps**: OpenStreetMap (Leaflet.js)
+
+## Architecture Context (Updated from Design Phase)
+
+- **System style**: Layered Architecture + Client-Server.
+- **Client side**: Customer App, Driver App, Staff Console, Admin Console.
+- **Server side**: NestJS backend acts as centralized source of truth for authentication, order lifecycle, delivery workflow, and real-time coordination.
+- **Layer direction**: Client -> Controller/Boundary -> Service/Application Logic -> Repository/Data + Integration/External Gateway.
+- **Cross-module communication**: EventEmitter2 + `@OnEvent()` for asynchronous workflow propagation between Ordering, Order-Processing, and Delivery.
+- **Design patterns adopted from design phase**:
+    - **Adapter**: Payment and Map integrations are accessed via gateway interfaces and adapters.
+    - **Strategy**: Discount/payment extension points remain open for future pricing and promotion rules.
+    - **Factory Method**: Order creation responsibilities should remain centralized if `OrderFactory` is introduced later.
+- **Implementation constraints**:
+    - No circular dependencies between high-level modules.
+    - Business logic must not access Mongoose models directly when a repository exists.
+    - Order and delivery state transitions must be validated centrally.
+
+## Backend Module Structure (Current Target)
+
+```
+common/
+├── configs/                     # ConfigModule, env validation
+├── database/                    # Mongo connection and shared schema base
+├── decorators/                  # @Public, @Roles, @CurrentUser
+└── guards/                      # JwtAuthGuard, RolesGuard
+
+integrations/
+├── payment/
+│   ├── interfaces/              # PaymentGateway abstraction
+│   ├── adapters/                # Mock/VNPay adapter
+│   └── payment.module.ts
+└── map/
+        ├── interfaces/              # MapGateway abstraction
+        ├── adapters/                # Mock/real map adapter
+        └── map.module.ts
+
+modules/{module-name}/
+├── {module}.module.ts          # Module registration
+├── {module}.controller.ts      # REST endpoints
+├── {module}.service.ts         # Application logic + @OnEvent handlers
+├── repositories/               # Encapsulate Mongoose access
+├── state/                      # Transition maps + validation guards
+├── dto/                        # Request/response contracts
+├── schemas/                    # Embedded or supporting schemas
+└── {entity}.schema.ts          # Aggregate root schema when applicable
+
+shared/
+├── constants/
+└── enums/
+```
+
+> Ghi chú: Dự án **không tách thành microservices** và **không bắt buộc full Clean Architecture**. Tuy nhiên, backend hiện tại đã bổ sung các lớp `repositories`, `state`, và `integrations` để bám sát design phase mà không cần refactor toàn bộ structure.
+
+## Implementation Mapping from Design Phase
+
+| Design View | Implementation Mapping |
+|-------------|------------------------|
+| `<<boundary>>` | NestJS Controllers + WebSocket Gateways |
+| `<<application logic>>` | NestJS Services |
+| `<<entity>>` | Mongoose Schemas / Domain data objects |
+| External Gateway | `integrations/payment`, `integrations/map` |
+| Data Access | `repositories/` per module |
+| State-dependent control | `state/` guards and transition maps |
+
+## Event-Driven Communication
+
+```typescript
+// Publish: cross-module workflow propagation
+this.eventEmitter.emit('order.placed', { orderId, items, customerId });
+
+// Subscribe: asynchronous module reaction
+@OnEvent('order.placed')
+handleOrderPlaced(payload: { orderId: string; items: any[] }) {
+  // Tạo KitchenTicket...
+}
+```
+
+Không dùng: ~~distributed event bus~~, ~~microservice broker~~, ~~DomainEvent base class bắt buộc~~
 
 ---
 
@@ -54,8 +135,8 @@ flowchart TB
         end
         
         subgraph F4[Flow 4: Tracking - BE1]
-            Driver --> GPS[GPS Location]
-            GPS --> WS[WebSocket]
+            Driver --> FakeLoc[Fake Location]
+            FakeLoc --> WS[WebSocket]
             WS --> Map[Customer Map - OpenStreetMap]
         end
     end
@@ -67,8 +148,7 @@ flowchart TB
         end
         
         subgraph F6[Flow 6: Admin Dashboard - BE2]
-            Stats[Statistics] --> Charts[Charts]
-            Charts --> Reports[Reports]
+            Stats[Statistics] --> Cards[Summary Cards]
         end
     end
 ```
@@ -77,7 +157,7 @@ flowchart TB
 
 # Milestone 1: Foundation + Flow 1 (Tuần 1-4)
 
-**Mục tiêu**: Setup project hoàn chỉnh + Customer có thể đặt hàng end-to-end
+**Mục tiêu**: Setup hoàn chỉnh + Customer đặt hàng end-to-end mapping use case 02, 05, 06, 07, 08
 
 **Demo cuối M1**: Customer login → xem menu → thêm vào cart → place order → xem order status
 
@@ -85,185 +165,111 @@ flowchart TB
 
 | Task | Task Description | Assignment | Output | Status |
 |------|------------------|------------|--------|--------|
-| BE | Setup NestJS project với ConfigModule + MongoModule | BE1 + BE2 | Backend skeleton chạy được | ⬜ |
-| BE | Setup EventingModule với EventEmitter + EventBusPort | BE1 | Event bus infrastructure | ⬜ |
-| BE | Auth module: User schema + JWT authentication | BE2 | POST /auth/login, POST /auth/register | ⬜ |
-| BE | Role-based guards (Customer, Staff, Driver, Admin) | BE2 | @Roles decorator + RolesGuard | ⬜ |
-| BE | Seed data: users với 4 roles khác nhau | BE1 + BE2 | npm run seed | ⬜ |
-| FE | Setup Next.js 16 project với App Router | FE1 | Frontend skeleton | ⬜ |
-| FE | Setup infrastructure layer: API client + auth storage | FE1 | src/infrastructure/api/ | ⬜ |
-| FE | Route groups skeleton: customer/staff/driver/admin | FE1 + FE2 | App router groups | ⬜ |
-| FE | Login page + AuthContext | FE1 | /login page hoạt động | ⬜ |
-| FE | Protected routes + redirect theo role | FE2 | Unauthorized redirect | ⬜ |
+| M1-BE-01 | **Project Setup**: Tạo `.env` (MONGO_URI, JWT_SECRET, PORT=3001). ConfigModule với env validation. MongoModule. `GET /api/health` verify DB. **Enable CORS** cho `http://localhost:3000`. | BE1 + BE2 | Health check + CORS hoạt động | ✅ |
+| M1-BE-02 | **Global Guards**: Register `JwtAuthGuard` + `RolesGuard` làm `APP_GUARD` global trong AppModule. Mọi route default protected, dùng `@Public()` cho route public. | BE2 | Protected routes chặn unauthorized | ✅ |
+| M1-BE-03 | **Auth Module**: User schema (email, passwordHash, role, name). AuthService + UserRepository. `POST /auth/register` → return `{ token, user }`. `POST /auth/login` → return `{ token, user }` (**key = `token`, không phải `access_token`**). `GET /auth/me`. | BE2 | 3 auth endpoints, response format khớp FE | ✅ |
+| M1-BE-04 | **Seed Users + Menu**: Script `npm run seed` tạo 4 test users (customer/staff/driver/admin @test.com, pass: 123456) + 10 menu items với categories. Chạy nhiều lần không duplicate. | BE1 + BE2 | `npm run seed` hoạt động | ✅ |
+| M1-FE-01 | **Next.js Setup**: App Router, TypeScript, ESLint, feature-based structure. | FE1 | `npm run dev` chạy được | ✅ |
+| M1-FE-02 | **API Infrastructure**: Axios wrapper `lib/api.ts` (baseURL: `localhost:3001/api`). JWT interceptor. 401 → redirect login. | FE1 | API client hoạt động | ✅ |
+| M1-FE-03 | **Route Groups + Layouts**: Layout riêng cho `(customer)`, `(staff)`, `(driver)`, `(admin)`. Customer + Driver: BottomNav. Staff + Admin: Sidebar. | FE1 + FE2 | 4 route groups với layouts | 🔄 |
+| M1-FE-04 | **Login Page**: Form login → gọi `POST /auth/login` → lưu JWT → redirect theo role. AuthContext + useAuth hook. | FE1 | `/login` hoạt động end-to-end | ✅ |
 
-## Tuần 3-4: Flow 1 - Ordering (BE1 + FE1)
+## Tuần 3-4: Flow 1 - Ordering
 
 | Task | Task Description | Assignment | Output | Status |
 |------|------------------|------------|--------|--------|
-| BE | Ordering module skeleton + Order entity | BE1 | src/modules/ordering/ | ⬜ |
-| BE | Order schema + OrderRepoMongo | BE1 | orders collection | ⬜ |
-| BE | Menu module: MenuItem schema + seed data | BE1 | GET /menu | ⬜ |
-| BE | PlaceOrderUseCase + publish OrderPlaced event | BE1 | POST /orders | ⬜ |
-| BE | GetOrderUseCase | BE1 | GET /orders/:id | ⬜ |
-| BE | GetCustomerOrdersUseCase | BE1 | GET /orders?customerId= | ⬜ |
-| FE | Menu page: hiển thị danh sách món | FE1 | /(customer)/menu | ⬜ |
-| FE | MenuItemCard component | FE1 | Component hiển thị món | ⬜ |
-| FE | CartContext + useCart hook | FE1 | Cart state management | ⬜ |
-| FE | Cart page: xem giỏ hàng + checkout | FE1 | /(customer)/cart | ⬜ |
-| FE | Place order flow: gọi API + redirect | FE1 | Checkout hoạt động | ⬜ |
-| FE | Order detail page: hiển thị status | FE2 | /(customer)/orders/[orderId] | ⬜ |
-| FE | Order history page | FE2 | /(customer)/orders | ⬜ |
+| M1-BE-05 | **Order Schema**: Mongoose schema: customerId, items[{menuItemId, name, quantity, unitPrice}], totalAmount, status (PENDING/CONFIRMED/PREPARING/READY/DELIVERING/DELIVERED/CANCELLED), deliveryAddress, createdAt. | BE1 | `orders` collection | ✅ |
+| M1-BE-06 | **Menu Endpoints**: `GET /api/menu` trả list tất cả menu items. `GET /api/menu?category=Main` filter by category. Public endpoint (`@Public()`). Dùng `MenuItemRepository` thay vì query model trực tiếp trong service. | BE1 | Menu API hoạt động | ✅ |
+| M1-BE-07 | **Order Endpoints**: `POST /api/orders` tạo order (validate items exist, tính totalAmount, status=PENDING, **emit `order.placed` event**). `GET /api/orders/my` lấy orders của user đang login. `GET /api/orders/:id` lấy chi tiết. Service đi qua `OrderRepository`; nếu có online payment thì gọi `PaymentGateway` adapter trước khi confirm flow. | BE1 | 3 order endpoints + event emit | ✅ |
+| M1-FE-05 | **Menu Page**: Fetch `GET /menu`. Filter tabs by category. Hiển thị grid MenuItemCard. Nút "Add to Cart". | FE1 | `/(customer)/menu` | ✅ |
+| M1-FE-06 | **Cart State + Page**: CartContext (useState, không cần localStorage). addItem, removeItem, updateQuantity, clearCart. Cart page hiển thị items + delivery address form + "Place Order" button. | FE1 | `/(customer)/cart` hoạt động | ✅ |
+| M1-FE-07 | **Checkout Flow**: Gọi `POST /orders`. Loading state. Clear cart on success. Redirect đến order detail. Alert nếu fail. | FE1 | Đặt hàng end-to-end | ✅ |
+| M1-FE-08 | **Order Detail Page**: Fetch order by ID. Hiển thị status badge, items list, total, address. Nút "Refresh" để cập nhật status (không polling). | FE2 | `/(customer)/orders/[id]` | ✅ |
+| M1-FE-09 | **Order History**: Fetch `GET /orders/my`. List cards với status, date, total. Click → navigate detail. Text "Chưa có đơn hàng" nếu empty. | FE2 | `/(customer)/orders` | ✅ |
 
-### M1 Deliverables
-- ✅ Backend + Frontend chạy được
-- ✅ Auth hoạt động với 4 roles
-- ✅ Customer đặt hàng thành công
-- ✅ Order status hiển thị đúng
+### M1 Integration Checkpoint
+> ⚠️ **Cuối tuần 4**: FE1 + BE1 ngồi lại test end-to-end trên 1 máy. Verify: login → menu → cart → place order → xem order. Fix mọi lỗi contract trước khi qua M2.
 
 ---
 
 # Milestone 2: Flow 2 - Staff Workflow (Tuần 5-6)
 
-**Mục tiêu**: Staff có thể xử lý đơn hàng (Accept/Reject/Ready)
+**Mục tiêu**: Staff xử lý đơn hàng mapping use case 11, 12, 13, 14, 15
 
-**Demo cuối M2**: Customer đặt → Staff thấy ticket → Accept/Reject/Ready → Customer thấy status đổi
+**Demo cuối M2**: Customer đặt → Staff thấy ticket → Accept/Reject/Ready → Customer thấy status đổi (sau refresh)
 
 ## Tuần 5: Order Processing Backend (BE2)
 
 | Task | Task Description | Assignment | Output | Status |
 |------|------------------|------------|--------|--------|
-| BE | Order-processing module skeleton | BE2 | src/modules/order-processing/ | ⬜ |
-| BE | KitchenTicket entity + schema | BE2 | kitchenTickets collection | ⬜ |
-| BE | OrderEventsSubscriber: OrderPlaced → create ticket | BE2 | Auto-create ticket khi có order | ⬜ |
-| BE | GetPendingTicketsUseCase | BE2 | GET /tickets?status=PENDING | ⬜ |
-| BE | GetTicketByIdUseCase | BE2 | GET /tickets/:id | ⬜ |
-| BE | AcceptTicketUseCase + publish TicketConfirmed | BE2 | POST /tickets/:id/accept | ⬜ |
-| BE | RejectTicketUseCase + publish TicketRejected | BE2 | POST /tickets/:id/reject | ⬜ |
-| BE | MarkReadyUseCase + publish TicketReady | BE2 | POST /tickets/:id/ready | ⬜ |
-| BE | TicketEventsSubscriber trong ordering module | BE1 | Update order status từ ticket events | ⬜ |
-| BE | Event contracts chuẩn hóa | BE1 + BE2 | Ticket events class-based | ⬜ |
+| M2-BE-01 | **KitchenTicket Schema + Service**: Schema: orderId, items[], status (PENDING/IN_PROGRESS/READY/REJECTED), staffId, createdAt, acceptedAt, readyAt. Service xử lý logic create/accept/reject/ready qua `KitchenTicketRepository` + `TicketStateGuard`. | BE2 | `kitchenTickets` collection + service | ✅ |
+| M2-BE-02 | **Ticket Endpoints**: `GET /api/tickets` (filter by status). `GET /api/tickets/:id`. `POST /api/tickets/:id/accept`. `POST /api/tickets/:id/reject` (body: {reason}). `POST /api/tickets/:id/ready`. Staff role required. | BE2 | 5 ticket endpoints | ✅ |
+| M2-BE-03 | **Event: order.placed → tạo ticket**: `@OnEvent('order.placed')` trong OrderProcessingService. Tạo KitchenTicket PENDING, copy items từ order. | BE2 | Ticket tự động tạo khi có order | ✅ |
+| M2-BE-04 | **Events: ticket → update order**: `@OnEvent('ticket.confirmed')` → order CONFIRMED. `@OnEvent('ticket.rejected')` → order CANCELLED. `@OnEvent('ticket.ready')` → order READY. Viết trong OrderingService và validate bằng `OrderStateGuard`. | BE1 | Order status sync với ticket | ✅ |
 
 ## Tuần 6: Staff UI (FE1)
 
 | Task | Task Description | Assignment | Output | Status |
 |------|------------------|------------|--------|--------|
-| FE | Staff tickets queue page | FE1 | /(staff)/orders | ⬜ |
-| FE | Ticket list component với filter status | FE1 | List PENDING tickets | ⬜ |
-| FE | Ticket detail page | FE1 | /(staff)/orders/[orderId] | ⬜ |
-| FE | Accept/Reject/Ready buttons với confirmation | FE1 | Action buttons hoạt động | ⬜ |
-| FE | Auto-refresh ticket list (polling 5s) | FE1 | Real-time update | ⬜ |
-| FE | Customer order detail: polling status | FE2 | Customer thấy status đổi | ⬜ |
-| FE | Status badge component | FE1 + FE2 | Shared UI component | ⬜ |
-| FE | Status mapping: TicketStatus → OrderStatus | FE1 | Mapping documented | ⬜ |
+| M2-FE-01 | **Staff Queue Page**: Layout 2 cột: Pending (trái), In-Progress (phải). Count badge mỗi cột. Nút "Refresh" để load lại. | FE1 | `/(staff)/tickets` | ✅ |
+| M2-FE-02 | **Ticket Card + Actions**: Card hiển thị order ID, items count, thời gian tạo. PENDING: nút Accept + Reject. IN_PROGRESS: nút Ready. Reject cần confirm + nhập reason. | FE1 | TicketCard component | ✅ |
+| M2-FE-03 | **Ticket Detail Page**: Full ticket info: items list, customer address, timestamps. Action buttons theo status. Back button về queue. | FE1 | `/(staff)/tickets/[id]` | ⬜ |
+| M2-FE-04 | **Status Badge Component**: Shared component. PENDING: yellow, CONFIRMED: blue, PREPARING: orange, READY: green, DELIVERING: purple, DELIVERED: green, CANCELLED: red. | FE1 + FE2 | `OrderStatusBadge` reusable | ✅ |
 
-### M2 Deliverables
-- ✅ Ticket tự động tạo khi có order
-- ✅ Staff Accept/Reject/Ready hoạt động
-- ✅ Order status sync với ticket status
-- ✅ Customer thấy status update
+### M2 Integration Checkpoint
+> ⚠️ **Cuối tuần 6**: Test cross-module event flow. Customer đặt hàng → ticket xuất hiện ở Staff → Staff accept → Customer refresh thấy CONFIRMED.
 
 ---
 
-# Milestone 3: Flow 3 + Flow 4 - Delivery & Tracking (Tuần 7-8)
+# Milestone 3: Flow 3 + Flow 4 - Delivery & Tracking (Tuần 7-9)
 
-**Mục tiêu**: Driver nhận đơn + Realtime GPS tracking với OpenStreetMap
+**Mục tiêu**: Driver nhận đơn + Customer thấy vị trí driver trên map mapping use case 17, 18, 19 (Flow 3) + use case 09, 20, và phần realtime của 08 (Flow 4)
 
-**Demo cuối M3**: Staff READY → Driver accept → Driver gửi location → Customer thấy trên map
+**Demo cuối M3**: Staff READY → Driver accept → Driver gửi fake location → Customer thấy trên map
 
-## Tuần 7: Delivery (BE2) + Tracking Backend (BE1)
-
-| Task | Task Description | Assignment | Output | Status |
-|------|------------------|------------|--------|--------|
-| BE | Delivery module skeleton | BE2 | src/modules/delivery/ | ⬜ |
-| BE | DeliveryAssignment entity + schema | BE2 | deliveryAssignments collection | ⬜ |
-| BE | Driver entity + schema | BE2 | drivers collection | ⬜ |
-| BE | TicketEventsSubscriber: TicketReady → create job | BE2 | Auto-create delivery job | ⬜ |
-| BE | GetAvailableJobsUseCase | BE2 | GET /delivery/jobs | ⬜ |
-| BE | AcceptDeliveryUseCase + publish DeliveryAccepted | BE2 | POST /delivery/jobs/:id/accept | ⬜ |
-| BE | PickupUseCase + publish DeliveryPickedUp | BE2 | POST /delivery/jobs/:id/pickup | ⬜ |
-| BE | CompleteDeliveryUseCase + publish DeliveryDelivered | BE2 | POST /delivery/jobs/:id/complete | ⬜ |
-| BE | Tracking module skeleton | BE1 | src/modules/tracking/ | ⬜ |
-| BE | LocationPoint + TrackingSession entities | BE1 | Tracking entities | ⬜ |
-| BE | Location schema + Session schema | BE1 | driverLocations, trackingSessions | ⬜ |
-| BE | DeliveryEventsSubscriber: start/stop session | BE1 | Auto manage tracking session | ⬜ |
-| BE | PublishLocationUseCase | BE1 | Persist driver location | ⬜ |
-| BE | DeliveryEventsSubscriber trong ordering | BE1 | Update order status DELIVERING/DELIVERED | ⬜ |
-
-## Tuần 8: WebSocket + Driver/Customer UI
+## Tuần 7: Delivery Backend (BE2) + Tracking Backend (BE1)
 
 | Task | Task Description | Assignment | Output | Status |
 |------|------------------|------------|--------|--------|
-| BE | WebSocket Gateway setup | BE1 | TrackingGateway | ⬜ |
-| BE | WS: driver emit location event | BE1 | driver:location channel | ⬜ |
-| BE | WS: customer subscribe order tracking | BE1 | tracking:subscribe channel | ⬜ |
-| BE | WS authentication middleware | BE1 | JWT verify on WS | ⬜ |
-| FE | WebSocket client setup | FE2 | src/infrastructure/realtime/ | ⬜ |
-| FE | Driver jobs list page | FE2 | /(driver)/jobs | ⬜ |
-| FE | Driver job detail page | FE2 | /(driver)/jobs/[orderId] | ⬜ |
-| FE | Driver: Accept job flow | FE2 | Accept button hoạt động | ⬜ |
-| FE | Driver: Pickup/Complete flow | FE2 | Status transition buttons | ⬜ |
-| FE | Driver: Geolocation API + send location | FE2 | navigator.geolocation | ⬜ |
-| FE | Driver: WS emit location interval 5s | FE2 | Auto send GPS | ⬜ |
-| FE | Customer tracking page | FE2 | /(customer)/orders/[orderId]/tracking | ⬜ |
-| FE | OpenStreetMap integration với Leaflet | FE2 | Map component | ⬜ |
-| FE | Customer: WS subscribe + show marker | FE2 | Real-time driver location | ⬜ |
-| FE | Customer: Driver marker animation | FE2 | Smooth marker movement | ⬜ |
+| M3-BE-01 | **DeliveryAssignment Schema + Service**: Schema: orderId, driverId, status (PENDING/ASSIGNED/PICKED_UP/DELIVERED), pickupAddress, deliveryAddress, timestamps. Service: create/accept/pickup/complete qua `DeliveryAssignmentRepository` + `DeliveryStateGuard`. Tích hợp `MapGateway` để chuẩn bị ETA flow. | BE2 | `deliveryAssignments` collection | ✅ |
+| M3-BE-02 | **Delivery Endpoints**: `GET /api/delivery/jobs` (PENDING jobs cho driver). `POST /api/delivery/jobs/:id/accept`. `POST /api/delivery/jobs/:id/pickup`. `POST /api/delivery/jobs/:id/complete`. Driver role required. | BE2 | 4 delivery endpoints | ✅ |
+| M3-BE-03 | **Event: ticket.ready → tạo delivery job**: `@OnEvent('ticket.ready')` trong DeliveryService. Tạo DeliveryAssignment PENDING. | BE2 | Job tự động tạo khi ticket ready | ✅ |
+| M3-BE-04 | **Events: delivery → update order**: `@OnEvent('delivery.accepted')` → order DELIVERING. `@OnEvent('delivery.delivered')` → order DELIVERED. Viết trong OrderingService. | BE1 | Order status sync với delivery | ✅ |
+| M3-BE-05 | **WebSocket Gateway**: NestJS Gateway với Socket.IO. Event `driver:location` nhận {orderId, lat, lng} → broadcast tới room `order:{orderId}`. Event `tracking:subscribe` → join room. Dùng query param `token` cho auth (không cần WS middleware phức tạp). | BE1 | WebSocket broadcast hoạt động | ✅ |
 
-### M3 Deliverables
-- ✅ Delivery job tự động tạo khi ticket ready
-- ✅ Driver Accept/Pickup/Complete hoạt động
-- ✅ WebSocket realtime location
-- ✅ Customer thấy driver trên OpenStreetMap
+## Tuần 8-9: Driver + Customer UI (FE2)
+
+| Task | Task Description | Assignment | Output | Status |
+|------|------------------|------------|--------|--------|
+| M3-FE-01 | **Driver Jobs Page**: Fetch available jobs. Card: pickup/delivery address, items count. Nút "Refresh". Empty state text. | FE2 | `/(driver)/jobs` | ✅ |
+| M3-FE-02 | **Driver Job Actions**: Accept → status ASSIGNED. "Đã lấy hàng" → PICKED_UP. "Hoàn thành" → DELIVERED. Confirm trước mỗi action. | FE2 | Status transitions hoạt động | ✅ |
+| M3-FE-03 | **WebSocket Client**: Setup Socket.IO client (`lib/socket.ts`). Connect với token qua query param. Basic reconnect. | FE2 | WS client hoạt động | ⬜ |
+| M3-FE-04 | **Driver Fake Location**: Khi có active job, hiển thị dropdown chọn vị trí giả lập (VD: "Quận 1", "Quận 3", "Gần nhà hàng", "Gần khách hàng") + nút "Gửi vị trí". Emit `driver:location` qua WS mỗi lần click. | FE2 | Driver gửi location giả lập | ⬜ |
+| M3-FE-05 | **Customer Tracking Page**: Leaflet.js + OpenStreetMap tiles. Subscribe WS room `order:{orderId}`. Render marker khi nhận location event. Centered trên delivery address. | FE2 | `/(customer)/orders/[id]/tracking` | ⬜ |
+| M3-FE-06 | **Map Marker Update**: Nhận WS event → cập nhật marker position (nhảy thẳng, không cần animation). Marker hiển thị icon driver. | FE2 | Marker realtime update | ⬜ |
+
+### M3 Integration Checkpoint
+> ⚠️ **Cuối tuần 9**: Full flow test. Customer đặt → Staff ready → Driver accept → Driver gửi fake location → Customer thấy marker trên map.
 
 ---
 
-# Milestone 4: Flow 5 + Flow 6 - Admin & Driver Recruitment (Tuần 9-10)
+# Milestone 4: Flow 5 + Flow 6 - Admin & Driver Recruitment (Tuần 10)
 
-**Mục tiêu**: Admin dashboard + Driver recruitment workflow + UI polish
+**Mục tiêu**: Admin dashboard + Driver recruitment + Menu management mapping use case 1 theo phạm vi approve or reject driver application (Flow 5) + use case 23, 24 (Flow 6)
 
-**Demo cuối M4**: Driver apply → Admin approve + Dashboard statistics + UX hoàn thiện
+**Demo cuối M4**: Driver apply → Admin approve + Dashboard stats
 
-## Tuần 9: Flow 5 Driver Recruitment (BE1) + Flow 6 Admin Stats (BE2)
-
-| Task | Task Description | Assignment | Output | Status |
-|------|------------------|------------|--------|--------|
-| BE | Driver apply endpoint | BE1 | POST /drivers/apply | ⬜ |
-| BE | Get pending drivers | BE1 | GET /admin/drivers?status=PENDING | ⬜ |
-| BE | Approve driver endpoint | BE1 | POST /admin/drivers/:id/approve | ⬜ |
-| BE | Reject driver endpoint | BE1 | POST /admin/drivers/:id/reject | ⬜ |
-| BE | Get all drivers với filter | BE1 | GET /admin/drivers | ⬜ |
-| BE | Driver status validation | BE1 | Only approved drivers can accept jobs | ⬜ |
-| BE | Statistics: total orders | BE2 | GET /admin/stats/orders | ⬜ |
-| BE | Statistics: total revenue | BE2 | GET /admin/stats/revenue | ⬜ |
-| BE | Statistics: daily chart data | BE2 | GET /admin/stats/daily | ⬜ |
-| BE | Statistics: orders by status | BE2 | GET /admin/stats/by-status | ⬜ |
-| BE | Menu management: CRUD | BE2 | POST/PUT/DELETE /admin/menu | ⬜ |
-
-## Tuần 10: Admin UI + Polish
+## Tuần 10: Admin + Driver Features
 
 | Task | Task Description | Assignment | Output | Status |
 |------|------------------|------------|--------|--------|
-| FE | Admin dashboard page | FE2 | /(admin)/dashboard | ⬜ |
-| FE | Stats summary cards | FE2 | Total orders, revenue, etc. | ⬜ |
-| FE | Daily orders chart | FE2 | Chart component | ⬜ |
-| FE | Admin drivers page | FE2 | /(admin)/drivers | ⬜ |
-| FE | Driver list với filter status | FE2 | List pending/approved/rejected | ⬜ |
-| FE | Approve/Reject driver modal | FE2 | Confirmation modal | ⬜ |
-| FE | Driver apply page | FE1 | /(driver)/apply | ⬜ |
-| FE | Driver apply form | FE1 | Form với validation | ⬜ |
-| FE | Menu management page | FE2 | /(admin)/menu | ⬜ |
-| FE | Error states cho tất cả pages | FE1 + FE2 | Error boundaries | ⬜ |
-| FE | Loading states cho tất cả pages | FE1 + FE2 | Skeleton loaders | ⬜ |
-| FE | Empty states cho lists | FE1 + FE2 | Empty state components | ⬜ |
-| FE | Toast notifications | FE1 + FE2 | Success/error toasts | ⬜ |
-| BE | Hardening: validation rules | BE1 + BE2 | DTO validation | ⬜ |
-| BE | Hardening: error handling | BE1 + BE2 | Exception filters | ⬜ |
-
-### M4 Deliverables
-- ✅ Driver recruitment workflow hoàn chỉnh
-- ✅ Admin dashboard với statistics
-- ✅ Menu management
-- ✅ UI polish hoàn thiện
+| M4-BE-01 | **Driver Registration**: Driver schema (userId, status, vehicleType, licensePlate, phone). `POST /api/drivers/apply` (Customer role). `GET /api/admin/drivers` (filter status). `POST /api/admin/drivers/:id/approve` (update role → DRIVER). `POST /api/admin/drivers/:id/reject`. Admin role required. Dùng `DriverRepository` + `DriverStateGuard`. | BE1 | Driver CRUD endpoints | ✅ |
+| M4-BE-02 | **Admin Stats**: `GET /api/admin/stats` return {totalOrders, todayOrders, totalRevenue, activeDrivers}. Dùng MongoDB `countDocuments` + `aggregate`. Admin role required. | BE2 | Stats endpoint | ⬜ |
+| M4-BE-03 | **Menu CRUD**: `POST /api/admin/menu` create. `PUT /api/admin/menu/:id` update. `DELETE /api/admin/menu/:id` (set available=false). Admin role required. Thực hiện qua repository layer để giữ service không phụ thuộc trực tiếp Mongoose model. | BE2 | Menu management endpoints | ⬜ |
+| M4-FE-01 | **Driver Apply Page**: Form: Vehicle Type (dropdown), License Plate, Phone. Submit → gọi API. Show success message. Nếu đã apply → show status hiện tại. | FE1 | `/(driver)/apply` | ⬜ |
+| M4-FE-02 | **Admin Dashboard**: Stats summary cards (4 cards: Total Orders, Today, Revenue, Drivers). Fetch từ stats API. | FE2 | `/(admin)/dashboard` | 🔄 |
+| M4-FE-03 | **Admin Drivers Page**: Table danh sách drivers. Tab filter: All/Pending/Approved/Rejected. Nút Approve/Reject mỗi row. Reject cần nhập reason. | FE2 | `/(admin)/drivers` | ✅ |
+| M4-FE-04 | **Admin Menu Page**: Table CRUD menu items. Nút Add → modal form. Nút Edit/Delete mỗi row. | FE2 | `/(admin)/menu` | ⬜ |
 
 ---
 
@@ -271,34 +277,17 @@ flowchart TB
 
 **Mục tiêu**: Integration testing + Bug fixes + Demo preparation
 
-**Demo cuối M5**: Full demo flow từ Customer → Staff → Driver → Customer tracking
+**Demo cuối M5**: Full demo flow Customer → Staff → Driver → Customer tracking
 
 ## Tuần 11: Final Integration
 
 | Task | Task Description | Assignment | Output | Status |
 |------|------------------|------------|--------|--------|
-| BE | E2E test: Order flow (Flow 1 → 2) | BE1 + BE2 | Test order → ticket | ⬜ |
-| BE | E2E test: Delivery flow (Flow 3) | BE2 | Test ticket → delivery | ⬜ |
-| BE | E2E test: Tracking flow (Flow 4) | BE1 | Test WS location update | ⬜ |
-| BE | E2E test: Driver recruitment (Flow 5) | BE1 | Test apply → approve | ⬜ |
-| BE | Seed data cho demo | BE1 + BE2 | Complete seed script | ⬜ |
-| BE | API documentation | BE1 + BE2 | Swagger/OpenAPI docs | ⬜ |
-| BE | Docker compose production | BE1 | docker-compose.prod.yml | ⬜ |
-| BE | Environment config | BE1 + BE2 | .env.example updated | ⬜ |
-| FE | E2E smoke test | FE1 + FE2 | Manual test script | ⬜ |
-| FE | Bug fixes từ testing | FE1 + FE2 | Fix reported bugs | ⬜ |
-| FE | Demo script preparation | FE1 | Step-by-step demo guide | ⬜ |
-| FE | README update | FE1 + FE2 | Setup instructions | ⬜ |
-| ALL | Integration testing | All | Full flow testing | ⬜ |
-| ALL | Bug fixes | All | Fix critical bugs | ⬜ |
-| ALL | Demo rehearsal | All | Practice demo | ⬜ |
-| ALL | Final documentation | All | Complete docs | ⬜ |
-
-### M5 Deliverables
-- ✅ All 6 flows hoạt động end-to-end
-- ✅ Demo script ready
-- ✅ Documentation complete
-- ✅ Ready for presentation
+| M5-01 | **Demo Seed Data**: Hoàn thiện seed script: 4 users, 10 menu items, 5 sample orders (các status khác nhau), 2 approved drivers, 1 pending driver. Data thực tế. | BE1 + BE2 | `npm run seed:demo` | ⬜ |
+| M5-02 | **Integration Testing**: Full team test tất cả 6 flows end-to-end trên 1 máy. Checklist: Login 4 roles → Customer order → Staff process → Driver deliver → Track on map → Admin approve driver. | All | All flows verified | ⬜ |
+| M5-03 | **Bug Fixes**: Fix tất cả bugs từ integration testing. Priority: flow-breaking > UI > cosmetic. | All | Zero flow-breaking bugs | ⬜ |
+| M5-04 | **Demo Script + Rehearsal**: Step-by-step demo guide: login credentials, demo sequence, talking points. Practice 2 lần. Backup plan nếu feature fail. | All | Demo ready (15-20 phút) | ⬜ |
+| M5-05 | **Documentation**: README (setup + run), Architecture diagram, API endpoints summary, package/component/class/state mapping theo design phase. Consolidate vào `/docs`. | All | Docs hoàn chỉnh | ⬜ |
 
 ---
 
@@ -318,46 +307,54 @@ flowchart TB
 ```mermaid
 sequenceDiagram
     participant C as Customer
-    participant O as Ordering - BE1
-    participant OP as Order-Processing - BE2
-    participant D as Delivery - BE2
-    participant T as Tracking - BE1
+    participant O as Ordering
+    participant OP as Order-Processing
+    participant D as Delivery
+    participant T as Tracking WS
     participant DR as Driver
 
-    C->>O: Place Order
-    O->>O: Create Order
-    O-->>OP: OrderPlaced Event
-    OP->>OP: Create Kitchen Ticket
+    C->>O: POST /orders
+    O->>O: Create Order (PENDING)
+    O-->>OP: emit order.placed
+    OP->>OP: Create KitchenTicket (PENDING)
     
     Note over OP: Staff Accept
-    OP-->>O: TicketConfirmed Event
-    O->>O: Update Status: CONFIRMED
+    OP->>OP: Ticket → IN_PROGRESS
+    OP-->>O: emit ticket.confirmed
+    O->>O: Order → CONFIRMED
     
     Note over OP: Staff Ready
-    OP-->>O: TicketReady Event
-    OP-->>D: TicketReady Event
-    O->>O: Update Status: READY
-    D->>D: Create Delivery Job
+    OP->>OP: Ticket → READY
+    OP-->>O: emit ticket.ready
+    OP-->>D: emit ticket.ready
+    O->>O: Order → READY
+    D->>D: Create DeliveryJob (PENDING)
     
     Note over D: Driver Accept
-    DR->>D: Accept Job
-    D-->>O: DeliveryAccepted Event
-    D-->>T: DeliveryAccepted Event
-    O->>O: Update Status: DELIVERING
-    T->>T: Start Tracking Session
+    DR->>D: POST /delivery/jobs/:id/accept
+    D->>D: Job → ASSIGNED
+    D-->>O: emit delivery.accepted
+    O->>O: Order → DELIVERING
     
-    Note over T: Driver sends GPS
-    DR->>T: Location Update via WS
-    T->>T: Persist Location
-    T-->>C: Broadcast Location via WS
+    Note over T: Driver sends fake location
+    DR->>T: WS driver:location {orderId, lat, lng}
+    T-->>C: WS broadcast to room order:{orderId}
     
     Note over D: Driver Complete
-    DR->>D: Complete Delivery
-    D-->>O: DeliveryDelivered Event
-    D-->>T: DeliveryDelivered Event
-    O->>O: Update Status: DELIVERED
-    T->>T: Stop Tracking Session
+    DR->>D: POST /delivery/jobs/:id/complete
+    D->>D: Job → DELIVERED
+    D-->>O: emit delivery.delivered
+    O->>O: Order → DELIVERED
 ```
+
+**6 Events (cross-module):**
+1. `order.placed` → Order-Processing tạo ticket
+2. `ticket.confirmed` → Ordering: order CONFIRMED
+3. `ticket.ready` → Ordering: order READY + Delivery: tạo job
+4. `delivery.accepted` → Ordering: order DELIVERING
+5. `delivery.delivered` → Ordering: order DELIVERED
+
+> `ticket.rejected` → Ordering: order CANCELLED (bonus, gọi trực tiếp cũng được)
 
 ---
 
@@ -367,38 +364,43 @@ sequenceDiagram
 flowchart TB
     subgraph BE1[BE1 - Bá Thiên]
         subgraph Ordering[Ordering Module]
-            orders[(orders)]
-            menu[(menuItems)]
+            OrdSvc[ordering.service.ts]
+            OrdCtrl[ordering.controller.ts]
+            OrdSchema[order.schema.ts + menu-item.schema.ts]
         end
         
         subgraph Tracking[Tracking Module]
-            locations[(driverLocations)]
-            sessions[(trackingSessions)]
+            TrkGW[tracking.gateway.ts - WebSocket]
         end
         
-        subgraph DriverMgmt[Driver Management]
-            driverApply[Driver Apply/Approve]
+        subgraph DriverMgmt[Driver Registration]
+            DrvCtrl[driver.controller.ts]
+            DrvSvc[driver.service.ts]
         end
     end
     
     subgraph BE2[BE2 - Tuấn Kha]
         subgraph OrderProcessing[Order-Processing Module]
-            tickets[(kitchenTickets)]
+            TickSvc[order-processing.service.ts]
+            TickCtrl[order-processing.controller.ts]
+            TickSchema[kitchen-ticket.schema.ts]
         end
         
         subgraph Delivery[Delivery Module]
-            assignments[(deliveryAssignments)]
-            drivers[(drivers)]
+            DelSvc[delivery.service.ts]
+            DelCtrl[delivery.controller.ts]
+            DelSchema[delivery-assignment.schema.ts]
         end
         
         subgraph Admin[Admin Module]
-            stats[Statistics]
-            menuMgmt[Menu CRUD]
+            AdmCtrl[admin.controller.ts]
+            AdmSvc[admin.service.ts]
         end
     end
     
-    subgraph Auth[Shared - Auth]
-        users[(users)]
+    subgraph Auth[Shared - Auth Module - BE2]
+        AuthSvc[auth.service.ts]
+        UserSchema[user.schema.ts]
     end
 ```
 
@@ -410,29 +412,21 @@ flowchart TB
 flowchart TB
     subgraph FE1[FE1 - Thanh Phúc]
         Login[/login]
-        Menu[/customer/menu]
-        Cart[/customer/cart]
-        StaffQueue[/staff/orders]
-        StaffDetail[/staff/orders/id]
-        DriverApply[/driver/apply]
+        Menu[/(customer)/menu]
+        Cart[/(customer)/cart]
+        StaffQueue[/(staff)/tickets]
+        StaffDetail[/(staff)/tickets/id]
+        DriverApply[/(driver)/apply]
     end
     
     subgraph FE2[FE2 - Tuấn Kiệt]
-        OrderHistory[/customer/orders]
-        OrderDetail[/customer/orders/id]
-        Tracking[/customer/orders/id/tracking]
-        DriverJobs[/driver/jobs]
-        DriverJobDetail[/driver/jobs/id]
-        AdminDashboard[/admin/dashboard]
-        AdminDrivers[/admin/drivers]
-        AdminMenu[/admin/menu]
-    end
-    
-    subgraph Shared[Shared Components]
-        StatusBadge[StatusBadge]
-        ErrorBoundary[ErrorBoundary]
-        LoadingSkeleton[LoadingSkeleton]
-        Toast[Toast]
+        OrderHistory[/(customer)/orders]
+        OrderDetail[/(customer)/orders/id]
+        Tracking[/(customer)/orders/id/tracking]
+        DriverJobs[/(driver)/jobs]
+        AdminDashboard[/(admin)/dashboard]
+        AdminDrivers[/(admin)/drivers]
+        AdminMenu[/(admin)/menu]
     end
 ```
 
@@ -440,57 +434,70 @@ flowchart TB
 
 ## API Endpoints Summary
 
-### Auth (BE2)
-- `POST /auth/register` - Đăng ký user
-- `POST /auth/login` - Đăng nhập
-- `GET /auth/me` - Lấy thông tin user hiện tại
+### Auth (BE2) — `@Public()` cho register/login
+- `POST /api/auth/register` → `{ token, user }`
+- `POST /api/auth/login` → `{ token, user }`
+- `GET /api/auth/me` → `{ id, email, role, name }`
 
 ### Ordering - Flow 1 (BE1)
-- `GET /menu` - Lấy danh sách món
-- `POST /orders` - Đặt hàng
-- `GET /orders/:id` - Lấy chi tiết order
-- `GET /orders` - Lấy danh sách orders (filter by customerId)
+- `GET /api/menu` — `@Public()`, filter: `?category=Main`
+- `POST /api/orders` — Customer role, emit `order.placed`
+- `GET /api/orders/my` — Customer role
+- `GET /api/orders/:id` — Authenticated
 
 ### Order-Processing - Flow 2 (BE2)
-- `GET /tickets` - Lấy danh sách tickets (filter by status)
-- `GET /tickets/:id` - Lấy chi tiết ticket
-- `POST /tickets/:id/accept` - Staff accept ticket
-- `POST /tickets/:id/reject` - Staff reject ticket
-- `POST /tickets/:id/ready` - Staff mark ready
+- `GET /api/tickets` — Staff role, filter: `?status=PENDING`
+- `GET /api/tickets/:id` — Staff role
+- `POST /api/tickets/:id/accept` — Staff, emit `ticket.confirmed`
+- `POST /api/tickets/:id/reject` — Staff, body: `{reason}`
+- `POST /api/tickets/:id/ready` — Staff, emit `ticket.ready`
 
 ### Delivery - Flow 3 (BE2)
-- `GET /delivery/jobs` - Lấy danh sách jobs (filter by status)
-- `POST /delivery/jobs/:id/accept` - Driver accept job
-- `POST /delivery/jobs/:id/pickup` - Driver pickup
-- `POST /delivery/jobs/:id/complete` - Driver complete
+- `GET /api/delivery/jobs` — Driver role (PENDING jobs)
+- `POST /api/delivery/jobs/:id/accept` — Driver, emit `delivery.accepted`
+- `POST /api/delivery/jobs/:id/pickup` — Driver
+- `POST /api/delivery/jobs/:id/complete` — Driver, emit `delivery.delivered`
 
 ### Tracking - Flow 4 (BE1)
-- `GET /tracking/:orderId/last` - Lấy last location
-- `WS driver:location` - Driver emit location
-- `WS tracking:subscribe` - Customer subscribe
+- `WS driver:location` — Driver emit `{orderId, lat, lng}`
+- `WS tracking:subscribe` — Customer join room `{orderId}`
 
 ### Driver Recruitment - Flow 5 (BE1)
-- `POST /drivers/apply` - Driver đăng ký
-- `GET /admin/drivers` - List drivers (filter by status)
-- `POST /admin/drivers/:id/approve` - Approve driver
-- `POST /admin/drivers/:id/reject` - Reject driver
+- `POST /api/drivers/apply` — Customer role
+- `GET /api/admin/drivers` — Admin role, filter: `?status=PENDING`
+- `POST /api/admin/drivers/:id/approve` — Admin
+- `POST /api/admin/drivers/:id/reject` — Admin, body: `{reason}`
 
 ### Admin Dashboard - Flow 6 (BE2)
-- `GET /admin/stats/summary` - Statistics summary
-- `GET /admin/stats/daily` - Daily chart data
-- `GET /admin/stats/by-status` - Orders by status
-- `POST /admin/menu` - Create menu item
-- `PUT /admin/menu/:id` - Update menu item
-- `DELETE /admin/menu/:id` - Delete menu item
+- `GET /api/admin/stats` — Admin role
+- `POST /api/admin/menu` — Admin, create menu item
+- `PUT /api/admin/menu/:id` — Admin, update
+- `DELETE /api/admin/menu/:id` — Admin, soft delete
+
+---
+
+## ✅ Known Issues — Đã Fix
+
+| # | Issue | Fix | Status |
+|---|-------|-----|--------|
+| 1 | Backend login trả `access_token`, FE expect `token` | BE2: đổi response key thành `token` | ✅ Fixed |
+| 2 | Backend register trả `{userId}`, FE expect `{token, user}` | BE2: register trả token + user luôn | ✅ Fixed |
+| 3 | CORS chưa enable | BE1: thêm `app.enableCors()` trong main.ts | ✅ Fixed |
+| 4 | Guards chưa global | BE2: register APP_GUARD trong AppModule | ✅ Fixed |
+| 5 | Order items là `string[]` thay vì structured objects | BE1: sửa schema items[] | ✅ Fixed |
+| 6 | Port mismatch (BE default 3000, FE target 3001) | BE1: set PORT=3001 trong .env | ✅ Fixed |
+| 7 | Seed script chưa có trong package.json | BE1: thêm `"seed": "ts-node src/seed.ts"` | ✅ Fixed |
 
 ---
 
 ## Notes
 
-1. **OpenStreetMap**: Sử dụng Leaflet.js cho map integration, không dùng Google Maps
-2. **Event-Driven**: Modules giao tiếp qua Domain Events, không trực tiếp access DB của module khác
-3. **BCE Pattern**: Cả Backend và Frontend đều follow Boundary/Control/Entity pattern
-4. **WebSocket**: Dùng Nest Gateway cho realtime, có fallback polling nếu WS fail
-5. **Cross-module Events**: 
-   - BE1 (Ordering) subscribe events từ BE2 (Order-Processing, Delivery)
-   - BE1 (Tracking) subscribe events từ BE2 (Delivery)
+1. **Demo-scope**: 4-7 users, happy path only, không cần pagination/polling/error handling phức tạp
+2. **Event-Driven**: Dùng `EventEmitter2` + `@OnEvent()` cho cross-module communication trong modular monolith
+3. **Tracking**: Fake GPS location (dropdown chọn vị trí giả lập), không dùng `navigator.geolocation`
+4. **Frontend Architecture**: Feature-based pattern (`features/` chứa service + hook + UI, `components/` chỉ chứa shared UI/layout)
+5. **Backend Architecture**: Controller/Boundary -> Service/Application Logic -> Repository/Data -> Integration/External Gateway. Không tách full Clean Architecture nhưng giữ dependency direction rõ ràng
+6. **Refresh**: Manual refresh (nút hoặc F5) thay vì polling/auto-refresh
+7. **WebSocket**: Dùng query param `token` cho auth, không cần WS middleware phức tạp
+8. **State Management in Backend**: Chuyển trạng thái Order/Ticket/Delivery/Driver phải đi qua `state` guards hoặc transition maps để tránh invalid transitions
+9. **External Services**: Payment và Map không gọi trực tiếp trong business flow khi đã có gateway interface/adapters

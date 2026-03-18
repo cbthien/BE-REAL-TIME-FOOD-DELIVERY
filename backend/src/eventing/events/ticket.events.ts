@@ -1,1 +1,0 @@
-// TicketConfirmed, TicketRejected, TicketReady events

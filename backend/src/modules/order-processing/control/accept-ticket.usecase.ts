@@ -1,1 +1,0 @@
-// Accept ticket use case
