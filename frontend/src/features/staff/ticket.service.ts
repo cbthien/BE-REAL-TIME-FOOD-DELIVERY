@@ -1,20 +1,46 @@
-import { api } from '@/lib/api';
-import type { KitchenTicket, TicketAction } from '@/types';
+import type { KitchenTicket } from '@/types';
+import type { OrderStatus } from '@/types';
+import { staffOrderService } from './staff-order.service';
+
+const QUEUE_STATUSES: OrderStatus[] = ['PENDING', 'CONFIRMED', 'PREPARING', 'READY'];
+
+export type StaffTicket = KitchenTicket & {
+  orderStatus: OrderStatus;
+  driverId?: string | null;
+  driverName?: string | null;
+};
 
 export const ticketService = {
-  async getQueue(): Promise<KitchenTicket[]> {
-    return api.get<KitchenTicket[]>('/staff/queue');
+  async getAll(): Promise<StaffTicket[]> {
+    return staffOrderService.getOrders();
   },
 
-  async acceptTicket(ticketId: string, notes?: string): Promise<KitchenTicket> {
-    return api.patch<KitchenTicket>(`/staff/queue/${ticketId}/accept`, { notes });
+  async getQueue(): Promise<StaffTicket[]> {
+    const orders = await staffOrderService.getOrders();
+    return orders.filter((o) => QUEUE_STATUSES.includes(o.orderStatus));
   },
 
-  async completeTicket(ticketId: string, notes?: string): Promise<KitchenTicket> {
-    return api.patch<KitchenTicket>(`/staff/queue/${ticketId}/complete`, { notes });
+  async acceptTicket(ticketId: string): Promise<void> {
+    await staffOrderService.updateOrderStatus(ticketId, 'CONFIRMED');
   },
 
-  async rejectTicket(ticketId: string, reason: string): Promise<KitchenTicket> {
-    return api.patch<KitchenTicket>(`/staff/queue/${ticketId}/reject`, { reason });
+  async startCooking(ticketId: string): Promise<void> {
+    await staffOrderService.updateOrderStatus(ticketId, 'PREPARING');
+  },
+
+  async completeTicket(ticketId: string): Promise<void> {
+    await staffOrderService.updateOrderStatus(ticketId, 'READY');
+  },
+
+  async rejectTicket(ticketId: string): Promise<void> {
+    await staffOrderService.cancelOrder(ticketId);
+  },
+
+  async assignDriver(orderId: string, driverId: string): Promise<void> {
+    await staffOrderService.assignDriver(orderId, driverId);
+  },
+
+  async getAvailableDrivers() {
+    return staffOrderService.getAvailableDrivers();
   },
 };

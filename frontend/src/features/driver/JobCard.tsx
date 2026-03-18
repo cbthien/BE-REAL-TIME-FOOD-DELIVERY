@@ -5,22 +5,22 @@ import { Badge, Card } from '@/components/ui';
 
 interface JobCardProps {
   job: DeliveryJob;
-  onAction?: (jobId: string, action: 'accept' | 'pickup' | 'deliver') => void;
+  onAction?: (job: DeliveryJob, action: 'pickup' | 'deliver') => void;
 }
 
 export function JobCard({ job, onAction }: JobCardProps) {
   const getStatusBadge = () => {
     switch (job.status) {
       case 'PENDING':
-        return <Badge variant="default">Available</Badge>;
+        return <Badge variant="default">Chờ nhận</Badge>;
       case 'ASSIGNED':
-        return <Badge variant="outline">Assigned</Badge>;
+        return <Badge variant="outline">Được gán</Badge>;
       case 'PICKED_UP':
-        return <Badge variant="secondary">Picked Up</Badge>;
+        return <Badge variant="secondary">Đang giao</Badge>;
       case 'DELIVERED':
-        return <Badge variant="default">Delivered</Badge>;
+        return <Badge variant="default">Hoàn thành</Badge>;
       case 'CANCELLED':
-        return <Badge variant="destructive">Cancelled</Badge>;
+        return <Badge variant="destructive">Đã hủy</Badge>;
     }
   };
 
@@ -41,10 +41,12 @@ export function JobCard({ job, onAction }: JobCardProps) {
           <p className="text-sm font-medium text-gray-700">📍 Pickup:</p>
           <p className="text-sm text-gray-900">{job.pickupAddress}</p>
         </div>
-        <div>
-          <p className="text-sm font-medium text-gray-700">🏠 Delivery:</p>
-          <p className="text-sm text-gray-900">{job.deliveryAddress}</p>
-        </div>
+        {job.deliveryAddress && (
+          <div>
+            <p className="text-sm font-medium text-gray-700">🏠 Delivery:</p>
+            <p className="text-sm text-gray-900">{job.deliveryAddress}</p>
+          </div>
+        )}
         {job.customerName && (
           <div>
             <p className="text-sm font-medium text-gray-700">👤 Customer:</p>
@@ -63,28 +65,20 @@ export function JobCard({ job, onAction }: JobCardProps) {
       </div>
 
       <div className="flex gap-2">
-        {job.status === 'PENDING' && onAction && (
-          <button
-            onClick={() => onAction(job.id, 'accept')}
-            className="flex-1 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors font-medium"
-          >
-            Accept Job
-          </button>
-        )}
         {job.status === 'ASSIGNED' && onAction && (
           <button
-            onClick={() => onAction(job.id, 'pickup')}
+            onClick={() => onAction(job, 'pickup')}
             className="flex-1 px-4 py-2 bg-orange-600 text-white rounded hover:bg-orange-700 transition-colors font-medium"
           >
-            Mark as Picked Up
+            Đã lấy hàng
           </button>
         )}
         {job.status === 'PICKED_UP' && onAction && (
           <button
-            onClick={() => onAction(job.id, 'deliver')}
+            onClick={() => onAction(job, 'deliver')}
             className="flex-1 px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors font-medium"
           >
-            Mark as Delivered
+            Đã giao xong
           </button>
         )}
       </div>

@@ -2,7 +2,7 @@ import axios, { AxiosError, AxiosInstance, AxiosRequestConfig, InternalAxiosRequ
 import { authStorage } from '@/features/auth/auth.storage';
 
 // Base URL from environment variables (Next.js uses process.env)
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000/api';
 if (typeof window !== 'undefined') {
   console.log('API_BASE_URL:', API_BASE_URL);
 }

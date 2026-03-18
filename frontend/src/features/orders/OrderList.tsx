@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState } from 'react';
 import Link from 'next/link';
@@ -118,7 +118,7 @@ export function OrderList({ orders, onSelectOrder, refetch }: OrderListProps) {
                    </p>
                 </div>
 
-                {order.status === 'PENDING' && (
+                {['PENDING', 'CONFIRMED'].includes(order.status) && (
                   <button
                     onClick={(e) => handleCancel(e, order.id)}
                     disabled={cancellingId === order.id}

@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
@@ -9,6 +9,7 @@ import { toast } from 'react-toastify';
 import { useAuth } from '@/features/auth';
 import { useCart } from '@/features/cart';
 import { orderService, type PaymentMethod } from '@/features/orders';
+import { CheckoutAddressModal } from '@/features/checkout/CheckoutAddressModal';
 import { CartSidebar } from '@/components/shared/CartSidebar';
 import { ProfileMenu } from '@/components/shared/ProfileMenu';
 
@@ -23,6 +24,8 @@ export function CustomerHeader() {
   const { itemCount, items, updateQuantity, removeItem, refreshCart } = useCart();
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
+  const [addressModalOpen, setAddressModalOpen] = useState(false);
+  const [pendingPaymentMethod, setPendingPaymentMethod] = useState<PaymentMethod | null>(null);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const [searchQuery, setSearchQuery] = useState(searchParams.get('q') || '');
@@ -61,24 +64,37 @@ export function CustomerHeader() {
     router.push('/login');
   };
 
-  const handleCheckout = async (paymentMethod: PaymentMethod) => {
+  const handleCheckoutRequest = (paymentMethod: PaymentMethod) => {
     if (isCheckingOut) return;
-
     if (!isAuthenticated) {
       router.push('/login');
       return;
     }
+    setPendingPaymentMethod(paymentMethod);
+    setAddressModalOpen(true);
+  };
+
+  const handleAddressConfirm = async (
+    result: { deliveryLat: number; deliveryLng: number; address?: string } | null,
+  ) => {
+    setAddressModalOpen(false);
+    const paymentMethod = pendingPaymentMethod ?? 'CASH';
+    setPendingPaymentMethod(null);
 
     setIsCheckingOut(true);
     try {
-      await orderService.checkoutActiveCart(paymentMethod);
+      const coords =
+        result != null
+          ? { deliveryLat: result.deliveryLat, deliveryLng: result.deliveryLng }
+          : undefined;
+      await orderService.checkoutActiveCart(paymentMethod, coords);
       await refreshCart();
       setIsCartOpen(false);
-      toast.success('Dat hang thanh cong. Ban co the theo doi trong My Orders.');
+      toast.success('Đặt hàng thành công. Bạn có thể theo dõi trong Đơn của tôi.');
       router.push('/orders');
     } catch (error) {
       console.error('[CHECKOUT] checkout failed', error);
-      toast.error('Dat hang that bai. Vui long thu lai.');
+      toast.error('Đặt hàng thất bại. Vui lòng thử lại.');
     } finally {
       setIsCheckingOut(false);
     }
@@ -159,6 +175,14 @@ export function CustomerHeader() {
         </div>
       </header>
 
+      <CheckoutAddressModal
+        open={addressModalOpen}
+        onClose={() => {
+          setAddressModalOpen(false);
+          setPendingPaymentMethod(null);
+        }}
+        onConfirm={handleAddressConfirm}
+      />
       <CartSidebar
         isOpen={isCartOpen}
         onClose={() => setIsCartOpen(false)}
@@ -169,9 +193,7 @@ export function CustomerHeader() {
         onRemoveItem={(id) => {
           void removeItem(id);
         }}
-        onCheckout={(paymentMethod) => {
-          void handleCheckout(paymentMethod);
-        }}
+        onCheckout={(paymentMethod) => handleCheckoutRequest(paymentMethod)}
         checkoutLoading={isCheckingOut}
       />
     </>

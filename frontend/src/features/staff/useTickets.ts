@@ -1,11 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import type { KitchenTicket } from '@/types';
+import type { StaffTicket } from './ticket.service';
 import { ticketService } from './ticket.service';
 
 export function useTickets() {
-  const [tickets, setTickets] = useState<KitchenTicket[]>([]);
+  const [tickets, setTickets] = useState<StaffTicket[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 

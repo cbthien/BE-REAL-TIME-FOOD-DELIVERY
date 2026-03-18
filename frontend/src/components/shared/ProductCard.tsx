@@ -55,7 +55,7 @@ export function ProductCard({ product, onAddToCart, index = 0 }: ProductCardProp
       whileHover={{ y: -8, transition: { duration: 0.2 } }}
       className="group relative bg-white rounded-2xl overflow-hidden shadow-md hover:shadow-2xl transition-all duration-300"
     >
-      {product.badge && (
+      {product.badge && badgeVariant[product.badge] && (
         <motion.div
           initial={{ scale: 0, rotate: -45 }}
           animate={{ scale: 1, rotate: 0 }}
@@ -70,8 +70,8 @@ export function ProductCard({ product, onAddToCart, index = 0 }: ProductCardProp
 
       <div className="relative w-full h-48 lg:h-56 overflow-hidden bg-gray-100">
         <Image
-          src={product.image}
-          alt={product.name}
+          src={product.image || 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?q=80&w=2600'}
+          alt={product.name || 'Product'}
           fill
           className="object-cover transition-transform duration-500 group-hover:scale-110"
         />

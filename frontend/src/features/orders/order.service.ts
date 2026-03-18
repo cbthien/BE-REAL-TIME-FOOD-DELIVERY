@@ -1,4 +1,4 @@
-﻿import { api } from '@/lib/api';
+import { api } from '@/lib/api';
 import type { Order, OrderItem, OrderStatus } from '@/types';
 
 export interface CreateOrderRequest {
@@ -37,6 +37,7 @@ function getNestedRecord(value: unknown, key: string): UnknownRecord | undefined
 
 function normalizeStatus(value: unknown): OrderStatus {
   const raw = typeof value === 'string' ? value.toUpperCase() : 'PENDING';
+  if (raw === 'PICKED_UP') return 'DELIVERING';
 
   const statuses: OrderStatus[] = [
     'PENDING',
@@ -74,6 +75,8 @@ function normalizeOrderItem(raw: unknown, index: number): OrderItem {
 function normalizeOrder(raw: unknown): Order {
   const record = isRecord(raw) ? raw : {};
   const customer = getNestedRecord(record, 'customer');
+  const deliveryLocation = getNestedRecord(record, 'deliveryLocation');
+  const driverLocation = getNestedRecord(record, 'driverLocation');
   const itemsRaw = Array.isArray(record.items) ? record.items : [];
   const items = itemsRaw.map((item, index) => normalizeOrderItem(item, index));
 
@@ -95,6 +98,18 @@ function normalizeOrder(raw: unknown): Order {
     updatedAt: asString(record.updatedAt ?? record.updated_at),
     confirmedAt: asString(record.confirmedAt),
     deliveredAt: asString(record.deliveredAt),
+    deliveryLocation:
+      deliveryLocation && asNumber(deliveryLocation.lat) != null && asNumber(deliveryLocation.lng) != null
+        ? { lat: asNumber(deliveryLocation.lat)!, lng: asNumber(deliveryLocation.lng)! }
+        : null,
+    driverLocation:
+      driverLocation && asNumber(driverLocation.lat) != null && asNumber(driverLocation.lng) != null
+        ? {
+            lat: asNumber(driverLocation.lat)!,
+            lng: asNumber(driverLocation.lng)!,
+            timestamp: asString(driverLocation.timestamp) ?? null,
+          }
+        : null,
   };
 }
 
@@ -139,8 +154,11 @@ export const orderService = {
     return normalizeSingleOrder(payload);
   },
 
-  async checkoutActiveCart(paymentMethod: PaymentMethod): Promise<Order> {
-    const payload = await api.post<unknown>('/orders', { paymentMethod });
+  async checkoutActiveCart(
+    paymentMethod: PaymentMethod,
+    opts?: { deliveryLat?: number; deliveryLng?: number },
+  ): Promise<Order> {
+    const payload = await api.post<unknown>('/orders', { paymentMethod, ...opts });
     return normalizeSingleOrder(payload);
   },
 

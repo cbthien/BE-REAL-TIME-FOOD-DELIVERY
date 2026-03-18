@@ -2,31 +2,39 @@
 
 import { useRouter } from 'next/navigation';
 import { CartList, CartSummary, useCart } from '@/features/cart';
+import { CheckoutAddressModal } from '@/features/checkout/CheckoutAddressModal';
 import { orderService } from '@/features/orders';
 import { useState } from 'react';
 
 export default function CartPage() {
   const router = useRouter();
   const { items, clearCart } = useCart();
-  const [deliveryAddress, setDeliveryAddress] = useState('');
   const [loading, setLoading] = useState(false);
+  const [addressModalOpen, setAddressModalOpen] = useState(false);
 
-  const handleCheckout = async () => {
-    if (!deliveryAddress.trim()) {
-      alert('Please enter delivery address');
+  const handleCheckoutClick = () => {
+    if (items.length === 0) {
+      alert('Giỏ hàng trống');
       return;
     }
+    setAddressModalOpen(true);
+  };
 
+  const handleAddressConfirm = async (
+    result: { deliveryLat: number; deliveryLng: number; address?: string } | null,
+  ) => {
+    setAddressModalOpen(false);
     setLoading(true);
     try {
-      const order = await orderService.create({
-        items,
-        deliveryAddress,
-      });
+      const coords =
+        result != null
+          ? { deliveryLat: result.deliveryLat, deliveryLng: result.deliveryLng }
+          : undefined;
+      const order = await orderService.checkoutActiveCart('CASH', coords);
       clearCart();
       router.push(`/orders/${order.id}`);
     } catch (error) {
-      alert('Failed to create order');
+      alert(error instanceof Error ? error.message : 'Tạo đơn thất bại');
     } finally {
       setLoading(false);
     }
@@ -34,30 +42,27 @@ export default function CartPage() {
 
   return (
     <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-6">Your Cart</h1>
+      <h1 className="text-3xl font-bold mb-6">Giỏ hàng</h1>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2">
           <CartList />
           {items.length > 0 && (
-            <div className="mt-6">
-              <label className="block text-sm font-medium mb-2">
-                Delivery Address
-              </label>
-              <input
-                type="text"
-                value={deliveryAddress}
-                onChange={(e) => setDeliveryAddress(e.target.value)}
-                placeholder="Enter your delivery address"
-                className="w-full px-4 py-2 border rounded-lg"
-              />
-            </div>
+            <p className="mt-4 text-sm text-gray-600">
+              Thanh toán sẽ tạo đơn từ giỏ hàng. Bạn có thể chọn địa chỉ giao hàng trước khi xác nhận.
+            </p>
           )}
         </div>
         <div>
-          <CartSummary onCheckout={handleCheckout} />
-          {loading && <p className="text-center mt-4 text-gray-600">Placing order...</p>}
+          <CartSummary onCheckout={handleCheckoutClick} />
+          {loading && <p className="text-center mt-4 text-gray-600">Đang tạo đơn...</p>}
         </div>
       </div>
+
+      <CheckoutAddressModal
+        open={addressModalOpen}
+        onClose={() => setAddressModalOpen(false)}
+        onConfirm={handleAddressConfirm}
+      />
     </div>
   );
 }

@@ -1,9 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { TicketCard } from './TicketCard';
+import { TicketCard, type TicketActionType } from './TicketCard';
 import { useTickets } from './useTickets';
 import { ticketService } from './ticket.service';
+import { ClipboardList } from 'lucide-react';
 import { Spinner } from '@/components/ui';
 
 export function TicketQueue() {
@@ -12,20 +13,19 @@ export function TicketQueue() {
 
   const handleAction = async (
     ticketId: string,
-    action: 'accept' | 'complete' | 'reject'
+    action: TicketActionType,
+    driverId?: string
   ) => {
     setProcessing(ticketId);
     try {
       if (action === 'accept') await ticketService.acceptTicket(ticketId);
+      if (action === 'start') await ticketService.startCooking(ticketId);
       if (action === 'complete') await ticketService.completeTicket(ticketId);
-      if (action === 'reject') {
-        const reason = prompt('Reason for rejection:');
-        if (!reason) return;
-        await ticketService.rejectTicket(ticketId, reason);
-      }
+      if (action === 'reject') await ticketService.rejectTicket(ticketId);
+      if (action === 'assign' && driverId) await ticketService.assignDriver(ticketId, driverId);
       await refetch();
     } catch (err) {
-      alert(`Failed to ${action} ticket: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      alert(`Failed to ${action}: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setProcessing(null);
     }
@@ -33,8 +33,8 @@ export function TicketQueue() {
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center py-12">
-        <Spinner size="lg" />
+      <div className="flex justify-center py-12">
+        <p className="text-gray-500">Đang tải...</p>
       </div>
     );
   }
@@ -55,9 +55,12 @@ export function TicketQueue() {
 
   if (tickets.length === 0) {
     return (
-      <div className="text-center py-12 text-gray-500">
-        <p className="text-lg">No tickets in queue</p>
-        <p className="text-sm mt-2">New orders will appear here</p>
+      <div className="rounded-2xl border border-gray-200 bg-white px-6 py-16 text-center shadow-sm">
+        <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gray-50 text-gray-400">
+          <ClipboardList className="h-8 w-8" />
+        </div>
+        <h2 className="text-xl font-semibold text-gray-900">Chưa có đơn cần xử lý</h2>
+        <p className="mt-2 text-sm text-gray-500">Đơn mới sẽ xuất hiện ở đây.</p>
       </div>
     );
   }

@@ -24,6 +24,8 @@ export interface Order {
   status: OrderStatus;
   deliveryAddress: string;
   deliveryPhone?: string;
+  deliveryLocation?: { lat: number; lng: number } | null;
+  driverLocation?: { lat: number; lng: number; timestamp?: string | null } | null;
   notes?: string;
   createdAt: string;
   updatedAt?: string;

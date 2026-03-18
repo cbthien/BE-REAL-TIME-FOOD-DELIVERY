@@ -19,17 +19,19 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<string>('must-try');
 
   // TODO: replace with API call: GET /api/menu — map _id and imageUrl to component shape
-  const products: Product[] = MOCK_MENU_ITEMS.map((item, idx) => ({
+  const menuItems = Array.isArray(MOCK_MENU_ITEMS) ? MOCK_MENU_ITEMS : [];
+  const products: Product[] = menuItems.map((item, idx) => ({
     id: item._id,
     name: item.name,
     price: item.price,
     originalPrice: item.price * 1.2, // Mock original price for design display
-    image: item.imageUrl,  // component uses 'image'; API returns 'imageUrl'
+    image: item.imageUrl ?? '',
     badge: idx === 0 ? 'SALE' : idx === 1 ? 'NEW' : idx === 2 ? 'HOT' : 'BEST SELLER',
     discount: idx === 0 ? 20 : undefined
   }));
-  const tabs = PRODUCT_TABS;
-  const banners = MOCK_PROMO_BANNERS;
+  const tabs = Array.isArray(PRODUCT_TABS) ? PRODUCT_TABS : [];
+  const banners = Array.isArray(MOCK_PROMO_BANNERS) ? MOCK_PROMO_BANNERS : [];
+  const bannerStyles = Array.isArray(PROMO_BANNER_STYLES) ? PROMO_BANNER_STYLES : [];
 
   // Handle add to cart
   const handleAddToCart = (product: Product) => {
@@ -102,7 +104,11 @@ export default function Home() {
         <div className="container mx-auto px-4 lg:px-8">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {banners.map((banner, index) => {
-              const style = PROMO_BANNER_STYLES[index % PROMO_BANNER_STYLES.length];
+              const style = bannerStyles[index % Math.max(bannerStyles.length, 1)] ?? {
+                bgGradient: 'from-gray-900 to-gray-800',
+                labelColor: 'text-white',
+                ctaStyle: 'bg-white text-gray-900 hover:bg-gray-100',
+              };
               return (
               <motion.div
                 key={banner.id}
@@ -115,7 +121,7 @@ export default function Home() {
                 <div className={`absolute inset-0 bg-gradient-to-r ${style.bgGradient}`}>
                   <div
                     className="absolute inset-0 bg-cover bg-center opacity-40 group-hover:scale-110 transition-transform duration-500"
-                    style={{ backgroundImage: `url(${banner.imageUrl})` }}
+                    style={{ backgroundImage: banner?.imageUrl ? `url(${banner.imageUrl})` : undefined }}
                   />
                 </div>
                 <div className="relative z-10 h-full flex flex-col justify-center px-8 text-white">
@@ -129,7 +135,7 @@ export default function Home() {
                     asChild
                     className={`${style.ctaStyle} font-semibold w-fit rounded-full`}
                   >
-                    <Link href={banner.ctaLink}>{banner.ctaText}</Link>
+                    <Link href={banner.ctaLink ?? '#'}>{banner.ctaText}</Link>
                   </Button>
                 </div>
               </motion.div>

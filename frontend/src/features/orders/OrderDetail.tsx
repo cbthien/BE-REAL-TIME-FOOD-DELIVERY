@@ -2,6 +2,7 @@
 
 import type { Order } from '@/types';
 import { OrderStatusBadge } from './OrderStatusBadge';
+import { ETAOverlay, TrackingMap } from '@/features/tracking';
 
 interface OrderDetailProps {
   order: Order;
@@ -29,9 +30,50 @@ export function OrderDetail({ order }: OrderDetailProps) {
         <OrderStatusBadge status={order.status} />
       </div>
 
-      <div className="border rounded-lg p-4 bg-gray-50">
-        <h3 className="font-semibold mb-2">Delivery Address</h3>
-        <p className="text-gray-700">{order.deliveryAddress || '-'}</p>
+      <div className="space-y-2">
+        <h3 className="font-semibold">Theo dõi đơn hàng</h3>
+        {order.driverLocation || order.deliveryLocation ? (
+          <>
+            <div className="relative">
+              <TrackingMap
+                deliveryAddress={order.deliveryAddress || 'Delivery'}
+                deliveryLocation={order.deliveryLocation ?? null}
+                driverLocation={
+                  order.driverLocation
+                    ? {
+                        lat: order.driverLocation.lat,
+                        lng: order.driverLocation.lng,
+                        timestamp: order.driverLocation.timestamp ?? new Date().toISOString(),
+                      }
+                    : undefined
+                }
+              />
+              <ETAOverlay
+                driverLocation={
+                  order.driverLocation
+                    ? { lat: order.driverLocation.lat, lng: order.driverLocation.lng }
+                    : null
+                }
+                deliveryLocation={order.deliveryLocation ?? null}
+              />
+            </div>
+            {!order.deliveryLocation && (
+              <p className="text-xs text-gray-500">
+                Chưa có tọa độ điểm giao (customer chưa cấp quyền Location khi đặt hàng).
+              </p>
+            )}
+            {!order.driverLocation && (
+              <p className="text-xs text-gray-500">
+                Tài xế chưa gửi vị trí, bản đồ sẽ cập nhật khi tài xế bắt đầu chia sẻ vị trí.
+              </p>
+            )}
+          </>
+        ) : (
+          <p className="text-sm text-gray-500">
+            Chưa có dữ liệu vị trí. Bản đồ sẽ hiển thị khi khách cho phép Location lúc đặt hàng hoặc
+            tài xế gửi vị trí.
+          </p>
+        )}
       </div>
 
       <div>

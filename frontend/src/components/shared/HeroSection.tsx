@@ -15,32 +15,47 @@ export function HeroSection() {
   const [currentSlide, setCurrentSlide] = useState(0);
 
   // TODO: replace with API call GET /api/promotions/banners
-  const slides = MOCK_HERO_SLIDES;
+  const slides = MOCK_HERO_SLIDES ?? [];
+  const slideCount = slides.length;
+  const safeIndex = slideCount > 0 ? Math.min(currentSlide, slideCount - 1) : 0;
 
-  // Auto-rotate slides every 5 seconds
+  // Auto-rotate slides every 5 seconds (only when we have slides)
   useEffect(() => {
+    if (slideCount <= 0) return;
     const timer = setInterval(() => {
-      setCurrentSlide((prev) => (prev + 1) % slides.length);
+      setCurrentSlide((prev) => (prev + 1) % slideCount);
     }, 5000);
     return () => clearInterval(timer);
-  }, [slides.length]);
+  }, [slideCount]);
 
   // Navigate to previous slide
   const prevSlide = () => {
-    setCurrentSlide((prev) => (prev - 1 + slides.length) % slides.length);
+    if (slideCount <= 0) return;
+    setCurrentSlide((prev) => (prev - 1 + slideCount) % slideCount);
   };
 
   // Navigate to next slide
   const nextSlide = () => {
-    setCurrentSlide((prev) => (prev + 1) % slides.length);
+    if (slideCount <= 0) return;
+    setCurrentSlide((prev) => (prev + 1) % slideCount);
   };
+
+  if (slideCount === 0) {
+    return (
+      <section className="relative w-full h-[500px] lg:h-[600px] bg-gray-100 flex items-center justify-center">
+        <p className="text-gray-500">No slides available.</p>
+      </section>
+    );
+  }
+
+  const slide = slides[safeIndex];
 
   return (
     <section className="relative w-full h-[500px] lg:h-[600px] bg-gray-100">
       <div className="absolute inset-0 overflow-hidden">
         <AnimatePresence mode="wait">
           <motion.div
-            key={currentSlide}
+            key={safeIndex}
             initial={{ opacity: 0, x: 100 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -100 }}
@@ -50,7 +65,7 @@ export function HeroSection() {
             {/* Single full background image for each slide */}
             <div
               className="absolute inset-0 bg-cover bg-center"
-              style={{ backgroundImage: `url(${slides[currentSlide].imageUrl})` }}
+              style={{ backgroundImage: slide ? `url(${slide.imageUrl})` : undefined }}
             />
 
             {/* Dark overlay to keep text readable */}
@@ -80,7 +95,7 @@ export function HeroSection() {
                     transition={{ delay: 0.4, duration: 0.5 }}
                     className="text-5xl lg:text-7xl font-black mb-4 leading-tight italic"
                   >
-                    {slides[currentSlide].title}
+                    {slide?.title ?? ''}
                   </motion.h1>
                   <motion.h2
                     initial={{ opacity: 0, x: -20 }}
@@ -88,7 +103,7 @@ export function HeroSection() {
                     transition={{ delay: 0.5, duration: 0.5 }}
                     className="text-2xl lg:text-3xl font-semibold mb-6 text-gray-200"
                   >
-                    {slides[currentSlide].subtitle}
+                    {slide?.subtitle ?? ''}
                   </motion.h2>
                   <motion.p
                     initial={{ opacity: 0, x: -20 }}
@@ -96,7 +111,7 @@ export function HeroSection() {
                     transition={{ delay: 0.6, duration: 0.5 }}
                     className="text-lg lg:text-xl mb-8 text-gray-100 hidden"
                   >
-                    {slides[currentSlide].description}
+                    {slide?.description ?? ''}
                   </motion.p>
                   <motion.div
                     initial={{ opacity: 0, y: 20 }}
@@ -108,7 +123,7 @@ export function HeroSection() {
                       size="lg"
                       className="bg-white text-red-600 hover:bg-gray-100 font-bold text-lg px-8 py-6 rounded-full shadow-xl"
                     >
-                      <a href={slides[currentSlide].ctaLink}>
+                      <a href={slide?.ctaLink ?? '#'}>
                         Order Now
                       </a>
                     </Button>
@@ -142,7 +157,7 @@ export function HeroSection() {
               key={index}
               onClick={() => setCurrentSlide(index)}
               className={`h-2 rounded-full transition-all ${
-                index === currentSlide ? 'bg-white w-6' : 'bg-white/50 w-2'
+                index === safeIndex ? 'bg-white w-6' : 'bg-white/50 w-2'
               }`}
               aria-label={`Go to slide ${index + 1}`}
             />

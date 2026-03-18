@@ -34,22 +34,23 @@ export function useOrder(id: string) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    const loadOrder = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const data = await orderService.getById(id);
-        setOrder(data);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load order');
-      } finally {
-        setLoading(false);
-      }
-    };
+  const loadOrder = async () => {
+    if (!id) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await orderService.getById(id);
+      setOrder(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load order');
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    if (id) loadOrder();
+  useEffect(() => {
+    void loadOrder();
   }, [id]);
 
-  return { order, loading, error };
+  return { order, loading, error, refetch: loadOrder };
 }
