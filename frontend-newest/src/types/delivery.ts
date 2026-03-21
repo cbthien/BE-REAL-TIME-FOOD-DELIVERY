@@ -6,6 +6,9 @@ export interface DeliveryJob {
   driverId?: string;
   driverName?: string;
   status: DeliveryStatus;
+  paymentMethod?: string;
+  paymentStatus?: string;
+  totalAmount?: number;
   pickupAddress: string;
   deliveryAddress: string;
   customerName?: string;

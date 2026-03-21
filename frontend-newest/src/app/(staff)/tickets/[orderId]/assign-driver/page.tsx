@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { ArrowLeft, Bike, CheckCircle2, Loader2, PhoneCall, UserRound } from 'lucide-react';
 import { toast } from 'react-toastify';
@@ -13,6 +13,7 @@ import type { StaffAvailableDriver, StaffOrderResponse } from '@/features/staff/
 import { cn } from '@/lib/utils';
 
 const currencyFormatter = new Intl.NumberFormat('vi-VN');
+const DRIVER_POLLING_INTERVAL_MS = 5000;
 
 export default function AssignDriverPage() {
   const router = useRouter();
@@ -26,6 +27,77 @@ export default function AssignDriverPage() {
   const [loading, setLoading] = useState(true);
   const [assigning, setAssigning] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const previousDriverOnlineMapRef = useRef<Record<string, boolean>>({});
+  const pollingInFlightRef = useRef(false);
+
+  const loadAssignData = useCallback(
+    async (options?: { silent?: boolean }) => {
+      const silent = options?.silent ?? false;
+      if (!orderId) return;
+      if (silent && pollingInFlightRef.current) return;
+
+      if (silent) {
+        pollingInFlightRef.current = true;
+      } else {
+        setLoading(true);
+        setError(null);
+      }
+
+      try {
+        const [orderData, driverData] = await Promise.all([
+          staffService.getOrderById(orderId),
+          staffService.getAvailableDrivers(),
+        ]);
+
+        setOrder(orderData);
+        setDrivers(driverData);
+
+        const nextOnlineMap: Record<string, boolean> = {};
+        const justWentOnlineNames: string[] = [];
+
+        for (const driver of driverData) {
+          const driverId = String(driver.userId ?? '');
+          const isOnline = Boolean(driver.isOnline);
+          nextOnlineMap[driverId] = isOnline;
+
+          const previousOnline = previousDriverOnlineMapRef.current[driverId];
+          if (previousOnline === false && isOnline) {
+            justWentOnlineNames.push(driver.fullName || `Driver #${driverId}`);
+          }
+        }
+
+        previousDriverOnlineMapRef.current = nextOnlineMap;
+
+        console.info('[AssignDriverPage.load] ready', {
+          orderId,
+          orderStatus: orderData?.status,
+          driverCount: driverData.length,
+          silent,
+        });
+
+        if (justWentOnlineNames.length > 0) {
+          console.info('[AssignDriverPage.driver_status_changed]', {
+            orderId,
+            wentOnline: justWentOnlineNames,
+          });
+          toast.info(`Driver online: ${justWentOnlineNames.join(', ')}`);
+          router.refresh();
+        }
+      } catch (err) {
+        console.error('[AssignDriverPage.load] failed', { orderId, silent, err });
+        if (!silent) {
+          setError(err instanceof Error ? err.message : 'Failed to load assign-driver data.');
+        }
+      } finally {
+        if (silent) {
+          pollingInFlightRef.current = false;
+        } else {
+          setLoading(false);
+        }
+      }
+    },
+    [orderId, router],
+  );
 
   useEffect(() => {
     if (!orderId) {
@@ -34,40 +106,26 @@ export default function AssignDriverPage() {
       return;
     }
 
-    let cancelled = false;
-    const load = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const [orderData, driverData] = await Promise.all([
-          staffService.getOrderById(orderId),
-          staffService.getAvailableDrivers(),
-        ]);
+    void loadAssignData({ silent: false });
+  }, [orderId, loadAssignData]);
 
-        if (cancelled) return;
-        setOrder(orderData);
-        setDrivers(driverData);
-        console.info('[AssignDriverPage.load] ready', {
-          orderId,
-          orderStatus: orderData?.status,
-          driverCount: driverData.length,
-        });
-      } catch (err) {
-        console.error('[AssignDriverPage.load] failed', { orderId, err });
-        if (cancelled) return;
-        setError(err instanceof Error ? err.message : 'Failed to load assign-driver data.');
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    };
+  useEffect(() => {
+    if (!orderId) return;
 
-    void load();
-    return () => {
-      cancelled = true;
-    };
-  }, [orderId]);
+    const intervalId = setInterval(() => {
+      void loadAssignData({ silent: true });
+    }, DRIVER_POLLING_INTERVAL_MS);
+
+    return () => clearInterval(intervalId);
+  }, [orderId, loadAssignData]);
+
+  useEffect(() => {
+    if (!selectedDriverId) return;
+    const stillExists = drivers.some((driver) => String(driver.userId ?? '') === selectedDriverId);
+    if (!stillExists) {
+      setSelectedDriverId('');
+    }
+  }, [drivers, selectedDriverId]);
 
   const isReadyOrder = (order?.status ?? '').toUpperCase() === 'READY';
 
