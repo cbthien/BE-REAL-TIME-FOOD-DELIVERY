@@ -198,6 +198,9 @@ export const jobService = {
 
   async updateMyLocation(orderId: string): Promise<void> {
     const { lat, lng } = await getCurrentPosition();
-    await api.patch(`/driver/orders/${orderId}/location`, { lat, lng });
+    await api.patch(`/driver/orders/${orderId}/location`, {
+      currentLat: lat,
+      currentLng: lng,
+    });
   },
 };

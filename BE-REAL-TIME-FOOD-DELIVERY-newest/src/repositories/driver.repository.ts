@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Driver } from 'src/entities/driver.entity';
+import { User } from 'src/entities/user.entity';
 import { DriverStatus } from 'src/enums/driver-status.enum';
 import { EntityManager, Repository } from 'typeorm';
 
@@ -27,11 +28,20 @@ export class DriverRepository {
     userId: string,
     manager: EntityManager,
   ): Promise<Driver | null> {
-    return manager.getRepository(Driver).findOne({
+    const driver = await manager.getRepository(Driver).findOne({
       where: { userId },
-      relations: ['user'],
       lock: { mode: 'pessimistic_write' },
     });
+    if (!driver) {
+      return null;
+    }
+    const user = await manager.getRepository(User).findOne({
+      where: { id: userId },
+    });
+    if (user) {
+      driver.user = user;
+    }
+    return driver;
   }
 
   async findAvailableDrivers(manager?: EntityManager): Promise<Driver[]> {

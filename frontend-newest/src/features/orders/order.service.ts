@@ -86,6 +86,8 @@ function normalizeOrder(raw: unknown): Order {
   const customer = getNestedRecord(record, 'customer');
   const delivery = getNestedRecord(record, 'delivery');
   const deliveryLocation = getNestedRecord(record, 'deliveryLocation');
+  const driver = getNestedRecord(record, 'driver');
+  const driverCurrentLocation = driver ? getNestedRecord(driver, 'currentLocation') : undefined;
   const driverLocation = getNestedRecord(record, 'driverLocation');
   const itemsRaw = Array.isArray(record.items) ? record.items : [];
   const items = itemsRaw.map((item, index) => normalizeOrderItem(item, index));
@@ -124,14 +126,35 @@ function normalizeOrder(raw: unknown): Order {
       deliveryLat != null && deliveryLng != null
         ? { lat: deliveryLat, lng: deliveryLng }
         : null,
-    driverLocation:
-      driverLocation && asNumber(driverLocation.lat) != null && asNumber(driverLocation.lng) != null
-        ? {
-            lat: asNumber(driverLocation.lat)!,
-            lng: asNumber(driverLocation.lng)!,
-            timestamp: asString(driverLocation.timestamp) ?? null,
-          }
-        : null,
+    driverLocation: (() => {
+      const fromFlat =
+        driverLocation &&
+        asNumber(driverLocation.lat) != null &&
+        asNumber(driverLocation.lng) != null
+          ? {
+              lat: asNumber(driverLocation.lat)!,
+              lng: asNumber(driverLocation.lng)!,
+              timestamp: asString(driverLocation.timestamp) ?? null,
+            }
+          : null;
+      if (fromFlat) return fromFlat;
+      // BE tracking shape: driver.currentLocation { lat, lng, lastLocationAt }
+      if (
+        driverCurrentLocation &&
+        asNumber(driverCurrentLocation.lat) != null &&
+        asNumber(driverCurrentLocation.lng) != null
+      ) {
+        return {
+          lat: asNumber(driverCurrentLocation.lat)!,
+          lng: asNumber(driverCurrentLocation.lng)!,
+          timestamp:
+            asString(driverCurrentLocation.lastLocationAt) ??
+            asString(driverCurrentLocation.timestamp) ??
+            null,
+        };
+      }
+      return null;
+    })(),
   };
 }
 
@@ -169,6 +192,37 @@ function normalizeSingleOrder(payload: unknown): Order {
   throw new Error('Invalid order response from server');
 }
 
+function mergeTrackingIntoOrder(order: Order, trackingRaw: unknown): Order {
+  if (!isRecord(trackingRaw)) return order;
+  let next = { ...order };
+
+  const driver = getNestedRecord(trackingRaw, 'driver');
+  const currentLocation = driver ? getNestedRecord(driver, 'currentLocation') : undefined;
+  if (
+    currentLocation &&
+    asNumber(currentLocation.lat) != null &&
+    asNumber(currentLocation.lng) != null
+  ) {
+    next = {
+      ...next,
+      driverLocation: {
+        lat: asNumber(currentLocation.lat)!,
+        lng: asNumber(currentLocation.lng)!,
+        timestamp: asString(currentLocation.lastLocationAt) ?? null,
+      },
+    };
+  }
+
+  const delivery = getNestedRecord(trackingRaw, 'delivery');
+  const tLat = asNumber(delivery?.lat);
+  const tLng = asNumber(delivery?.lng);
+  if (tLat != null && tLng != null && !next.deliveryLocation) {
+    next = { ...next, deliveryLocation: { lat: tLat, lng: tLng } };
+  }
+
+  return next;
+}
+
 export const orderService = {
   // Legacy path retained for cart-page flow compatibility.
   async create(data: CreateOrderRequest): Promise<Order> {
@@ -183,7 +237,13 @@ export const orderService = {
 
   async getById(id: string): Promise<Order> {
     const payload = await api.get<unknown>(`/orders/${id}`);
-    return normalizeSingleOrder(payload);
+    const order = normalizeSingleOrder(payload);
+    try {
+      const trackingPayload = await api.get<unknown>(`/orders/${id}/tracking`);
+      return mergeTrackingIntoOrder(order, trackingPayload);
+    } catch {
+      return order;
+    }
   },
 
   async getMyOrders(): Promise<Order[]> {

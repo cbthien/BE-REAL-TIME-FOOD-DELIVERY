@@ -69,7 +69,7 @@ export function TrackingMap({
             <p className="font-medium">Missing Google Maps API key</p>
             <p className="text-sm mt-1">
               Set <code className="px-1 py-0.5 bg-white border rounded">NEXT_PUBLIC_MAP_API_KEY</code> in
-              <code className="px-1 py-0.5 bg-white border rounded ml-1">frontend/.env.local</code>.
+              <code className="px-1 py-0.5 bg-white border rounded ml-1">.env.local</code> (thư mục gốc app Next.js).
             </p>
           </div>
         </div>

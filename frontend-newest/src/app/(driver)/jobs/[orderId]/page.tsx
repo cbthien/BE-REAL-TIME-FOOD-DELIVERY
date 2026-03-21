@@ -71,14 +71,14 @@ export default function DriverJobDetailPage() {
   const handlePickup = async () => {
     setProcessing(true);
     try {
+      const updated = await jobService.pickupJob(orderId);
+      setJob(updated);
       try {
         await jobService.updateMyLocation(orderId);
         await refetch();
       } catch {
-        // Nếu không lấy được vị trí thì vẫn cho pickup, chỉ warning sau
+        void 0;
       }
-      const updated = await jobService.pickupJob(orderId);
-      setJob(updated);
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Không thể cập nhật trạng thái đơn.');
     } finally {

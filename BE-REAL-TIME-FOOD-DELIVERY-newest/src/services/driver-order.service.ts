@@ -155,7 +155,11 @@ export class DriverOrderService {
       return this.mapDriverLocationResponse(order, updatedDriver);
     });
 
-    this.trackingGateway.emitOrderLocationUpdated(orderId, payload);
+    try {
+      this.trackingGateway.emitOrderLocationUpdated(orderId, payload);
+    } catch {
+      void 0;
+    }
 
     return payload;
   }
@@ -217,12 +221,14 @@ export class DriverOrderService {
 
   private mapDriverLocationResponse(order: Order, driver: Driver) {
     return {
-      orderId: order.id,
+      orderId: String(order.id),
       status: order.status,
-      driverId: driver.userId,
+      driverId: String(driver.userId),
       currentLat: driver.currentLat,
       currentLng: driver.currentLng,
-      lastLocationAt: driver.lastLocationAt,
+      lastLocationAt: driver.lastLocationAt
+        ? new Date(driver.lastLocationAt).toISOString()
+        : null,
     };
   }
 
@@ -257,6 +263,24 @@ export class DriverOrderService {
       paymentMethod: order.paymentMethod,
       paymentStatus: order.paymentStatus,
       totalAmount: order.totalAmount,
+      /** Điểm giao (khách) — để map marker D + Directions */
+      delivery: {
+        addressText: order.deliveryAddressText ?? null,
+        lat: order.deliveryLat ?? null,
+        lng: order.deliveryLng ?? null,
+      },
+      driverLocation:
+        order.driver &&
+        order.driver.currentLat != null &&
+        order.driver.currentLng != null
+          ? {
+              lat: order.driver.currentLat,
+              lng: order.driver.currentLng,
+              timestamp: order.driver.lastLocationAt
+                ? order.driver.lastLocationAt.toISOString()
+                : null,
+            }
+          : null,
       assignedAt: order.assignedAt,
       pickedUpAt: order.pickedUpAt,
       deliveredAt: order.deliveredAt,

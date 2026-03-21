@@ -65,10 +65,17 @@ export class TrackingGateway {
     };
   }
 
-  emitOrderLocationUpdated(orderId: string, payload: any) {
-    this.server
-      .to(this.getOrderRoom(orderId))
-      .emit('order.location.updated', payload);
+  emitOrderLocationUpdated(orderId: string, payload: unknown) {
+    try {
+      if (!this.server) {
+        return;
+      }
+      this.server
+        .to(this.getOrderRoom(orderId))
+        .emit('order.location.updated', payload);
+    } catch {
+      void 0;
+    }
   }
 
   private getOrderRoom(orderId: string) {
