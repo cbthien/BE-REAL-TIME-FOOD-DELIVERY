@@ -1,4 +1,4 @@
-import { Controller, Patch, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, Patch, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { UserRole } from 'src/enums/user-role.enum';
@@ -14,13 +14,19 @@ import { DriverProfileService } from 'src/services/driver-profile.service';
 export class DriverProfileController {
   constructor(private readonly driverProfileService: DriverProfileService) {}
 
+  @ApiOperation({ summary: 'Get current driver profile' })
+  @Get('me')
+  async getMyProfile(@Req() req: any) {
+    return this.driverProfileService.getMyProfile(req.user.id);
+  }
+
   @ApiOperation({ summary: 'Set current driver online' })
   @Patch('online')
   async goOnline(@Req() req: any) {
     return this.driverProfileService.setOnlineStatus(req.user.id, true);
   }
 
-  @ApiOperation({ summary: 'Set current driver offline' })
+    @ApiOperation({ summary: 'Set current driver offline' })
   @Patch('offline')
   async goOffline(@Req() req: any) {
     return this.driverProfileService.setOnlineStatus(req.user.id, false);

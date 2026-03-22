@@ -9,12 +9,14 @@ import { CreateOrderDto } from 'src/dto/order/create-order.dto';
 import { OrderItem } from 'src/entities/order-item.entity';
 import { Order } from 'src/entities/order.entity';
 import { Cart } from 'src/entities/cart.entity';
+import { Customer } from 'src/entities/customer.entity';
 
 import { CartStatus } from 'src/enums/cart-status.enum';
 import { OrderStatus } from 'src/enums/order-status.enum';
 import { PaymentMethod } from 'src/enums/payment-method.enum';
 import { PaymentStatus } from 'src/enums/payment-status.enum';
 import { WalletTransactionType } from 'src/enums/wallet-transaction-type.enum';
+import { DeliveryAddressMode } from 'src/enums/delivery-address-mode.enum';
 
 import { CartRepository } from 'src/repositories/cart.repository';
 import { CustomerRepository } from 'src/repositories/customer.repository';
@@ -22,11 +24,22 @@ import { OrderRepository } from 'src/repositories/order.repository';
 import { OrderItemRepository } from 'src/repositories/order-item.repository';
 import { WalletRepository } from 'src/repositories/wallet.repository';
 import { WalletTransactionRepository } from 'src/repositories/wallet-transaction.repository';
+import { storeConfig } from 'src/config/store.config';
+import { TrackingGateway } from 'src/gateways/tracking.gateway';
 
 const CUSTOMER_CANCELLABLE_STATUSES: OrderStatus[] = [
   OrderStatus.PENDING,
   OrderStatus.CONFIRMED,
 ];
+
+const SHIPPING_FEE = 30000;
+const EARTH_RADIUS_KM = 6371;
+
+type DeliveryAddressSnapshot = {
+  addressText: string;
+  lat: number | null;
+  lng: number | null;
+};
 
 @Injectable()
 export class OrderService {
@@ -38,6 +51,7 @@ export class OrderService {
     private readonly orderItemRepository: OrderItemRepository,
     private readonly walletRepository: WalletRepository,
     private readonly walletTransactionRepository: WalletTransactionRepository,
+    private readonly trackingGateway: TrackingGateway,
   ) {}
 
   async createOrder(userId: string, dto: CreateOrderDto) {
@@ -47,7 +61,12 @@ export class OrderService {
 
       this.validateCart(cart);
 
-      const totalAmount = this.calculateCartTotal(cart);
+      const itemsTotal = this.calculateCartTotal(cart);
+      const deliveryAddress = this.resolveDeliveryAddress(dto, customer);
+
+      this.ensureDeliveryWithinRadius(deliveryAddress);
+
+      const totalAmount = itemsTotal + SHIPPING_FEE;
 
       const order = await this.orderRepository.create(
         {
@@ -62,12 +81,18 @@ export class OrderService {
           deliveredAt: null,
           driverConfirmedDelivered: false,
           customerConfirmedDelivered: false,
+          deliveryAddressText: deliveryAddress.addressText,
+          deliveryLat: deliveryAddress.lat,
+          deliveryLng: deliveryAddress.lng,
         },
         manager,
       );
 
       const orderItems = this.buildOrderItemsFromCart(cart, order);
-      order.items = await this.orderItemRepository.saveMany(orderItems, manager);
+      order.items = await this.orderItemRepository.saveMany(
+        orderItems,
+        manager,
+      );
 
       if (dto.paymentMethod === PaymentMethod.WALLET) {
         await this.payWithWallet(customer.userId, order, totalAmount, manager);
@@ -96,6 +121,25 @@ export class OrderService {
     return orders.map((order) => this.mapOrderResponse(order));
   }
 
+  async getMyOrderTracking(userId: string, orderId: string) {
+    const customer = await this.customerRepository.findByUserId(userId);
+
+    if (!customer) {
+      throw new NotFoundException('Customer not found');
+    }
+
+    const order = await this.orderRepository.findByIdAndCustomerId(
+      orderId,
+      customer.userId,
+    );
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    return this.mapTrackingResponse(order);
+  }
+
   async getMyOrderDetail(userId: string, orderId: string) {
     const customer = await this.customerRepository.findByUserId(userId);
 
@@ -116,7 +160,7 @@ export class OrderService {
   }
 
   async cancelMyOrder(userId: string, orderId: string) {
-    return this.dataSource.transaction(async (manager) => {
+    const updatedOrder = await this.dataSource.transaction(async (manager) => {
       const customer = await this.getCustomerOrFail(userId, manager);
 
       const order = await this.orderRepository.findByIdAndCustomerIdForUpdate(
@@ -134,7 +178,7 @@ export class OrderService {
         if (!saved) {
           throw new NotFoundException('Order not found after cancel');
         }
-        return this.mapOrderResponse(saved);
+        return saved;
       }
 
       if (!CUSTOMER_CANCELLABLE_STATUSES.includes(order.status)) {
@@ -153,17 +197,21 @@ export class OrderService {
         await this.orderRepository.save(order, manager);
       }
 
-      const updatedOrder = await this.orderRepository.findById(order.id, manager);
-      if (!updatedOrder) {
+      const saved = await this.orderRepository.findById(order.id, manager);
+      if (!saved) {
         throw new NotFoundException('Order not found after cancel');
       }
 
-      return this.mapOrderResponse(updatedOrder);
+      return saved;
     });
+
+    this.emitTrackingStatus(updatedOrder);
+
+    return this.mapOrderResponse(updatedOrder);
   }
 
   async confirmDelivered(userId: string, orderId: string) {
-    return this.dataSource.transaction(async (manager) => {
+    const updatedOrder = await this.dataSource.transaction(async (manager) => {
       const customer = await this.getCustomerOrFail(userId, manager);
 
       const order = await this.orderRepository.findByIdAndCustomerIdForUpdate(
@@ -177,9 +225,7 @@ export class OrderService {
       }
 
       if (order.status !== OrderStatus.PICKED_UP) {
-        throw new BadRequestException(
-          'Only PICKED_UP orders can be confirmed',
-        );
+        throw new BadRequestException('Only PICKED_UP orders can be confirmed');
       }
 
       if (!order.customerConfirmedDelivered) {
@@ -188,24 +234,38 @@ export class OrderService {
         if (order.driverConfirmedDelivered) {
           order.status = OrderStatus.DELIVERED;
           order.deliveredAt = new Date();
+
+          if (
+            order.paymentMethod === PaymentMethod.CASH &&
+            order.paymentStatus === PaymentStatus.UNPAID
+          ) {
+            order.paymentStatus = PaymentStatus.PAID;
+          }
         }
 
         await this.orderRepository.save(order, manager);
       }
 
-      const updatedOrder = await this.orderRepository.findById(order.id, manager);
-      if (!updatedOrder) {
+      const saved = await this.orderRepository.findById(order.id, manager);
+      if (!saved) {
         throw new NotFoundException(
           'Order not found after delivery confirmation',
         );
       }
 
-      return this.mapOrderResponse(updatedOrder);
+      return saved;
     });
+
+    this.emitTrackingStatus(updatedOrder);
+
+    return this.mapOrderResponse(updatedOrder);
   }
 
   private async getCustomerOrFail(userId: string, manager: EntityManager) {
-    const customer = await this.customerRepository.findByUserId(userId, manager);
+    const customer = await this.customerRepository.findByUserId(
+      userId,
+      manager,
+    );
 
     if (!customer) {
       throw new NotFoundException('Customer not found');
@@ -257,6 +317,98 @@ export class OrderService {
     );
   }
 
+  private resolveDeliveryAddress(
+    dto: CreateOrderDto,
+    customer: Customer,
+  ): DeliveryAddressSnapshot {
+    const mode = dto.deliveryAddressMode ?? DeliveryAddressMode.DEFAULT;
+
+    if (mode === DeliveryAddressMode.DEFAULT) {
+      const defaultAddress = customer.defaultAddress;
+
+      if (!defaultAddress || !defaultAddress.fullAddress?.trim()) {
+        throw new BadRequestException(
+          'Default address not found. Please update profile address or use CUSTOM mode.',
+        );
+      }
+
+      return {
+        addressText: defaultAddress.fullAddress.trim(),
+        lat: defaultAddress.lat ?? null,
+        lng: defaultAddress.lng ?? null,
+      };
+    }
+
+    if (mode === DeliveryAddressMode.CUSTOM) {
+      const customText = dto.deliveryAddressText?.trim();
+
+      if (!customText) {
+        throw new BadRequestException(
+          'deliveryAddressText is required for CUSTOM mode',
+        );
+      }
+
+      if (dto.deliveryLat === undefined || dto.deliveryLng === undefined) {
+        throw new BadRequestException(
+          'deliveryLat and deliveryLng are required for CUSTOM mode',
+        );
+      }
+
+      return {
+        addressText: customText,
+        lat: dto.deliveryLat,
+        lng: dto.deliveryLng,
+      };
+    }
+
+    throw new BadRequestException('Invalid deliveryAddressMode');
+  }
+
+  private ensureDeliveryWithinRadius(delivery: DeliveryAddressSnapshot) {
+    if (delivery.lat === null || delivery.lng === null) {
+      throw new BadRequestException(
+        'Delivery location coordinates are required for delivery.',
+      );
+    }
+
+    const distanceKm = this.calculateDistanceKm(
+      storeConfig.lat,
+      storeConfig.lng,
+      delivery.lat,
+      delivery.lng,
+    );
+
+    if (distanceKm > storeConfig.deliveryRadiusKm) {
+      throw new BadRequestException(
+        'Delivery address is outside delivery radius (' +
+          storeConfig.deliveryRadiusKm +
+          'km).',
+      );
+    }
+  }
+
+  private calculateDistanceKm(
+    lat1: number,
+    lng1: number,
+    lat2: number,
+    lng2: number,
+  ) {
+    const toRadians = (value: number) => (value * Math.PI) / 180;
+
+    const dLat = toRadians(lat2 - lat1);
+    const dLng = toRadians(lng2 - lng1);
+
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(toRadians(lat1)) *
+        Math.cos(toRadians(lat2)) *
+        Math.sin(dLng / 2) *
+        Math.sin(dLng / 2);
+
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    return EARTH_RADIUS_KM * c;
+  }
   private buildOrderItemsFromCart(cart: Cart, order: Order): OrderItem[] {
     return cart.items.map((cartItem) => {
       const firstImage = cartItem.menuItem.images?.[0];
@@ -268,8 +420,7 @@ export class OrderService {
       orderItem.menuItemName = cartItem.menuItem.name;
       orderItem.menuItemDescription = cartItem.menuItem.description ?? null;
       orderItem.menuItemImageUrl = firstImage ? firstImage.imageUrl : null;
-      orderItem.menuItemCategoryName =
-        cartItem.menuItem.category?.name ?? null;
+      orderItem.menuItemCategoryName = cartItem.menuItem.category?.name ?? null;
       orderItem.quantity = cartItem.quantity;
       orderItem.price = cartItem.menuItem.price;
 
@@ -360,6 +511,65 @@ export class OrderService {
     await this.orderRepository.save(order, manager);
   }
 
+  private emitTrackingStatus(order: Order | null) {
+    if (!order) {
+      return;
+    }
+
+    try {
+      this.trackingGateway.emitOrderStatusUpdated(
+        String(order.id),
+        this.mapTrackingResponse(order),
+      );
+    } catch {
+      void 0;
+    }
+  }
+
+  private mapTrackingResponse(order: Order | null) {
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    return {
+      orderId: order.id,
+      status: order.status,
+      driver: order.driver
+        ? {
+            userId: order.driver.userId,
+            fullName: order.driver.user?.fullName ?? null,
+            email: order.driver.user?.email ?? null,
+            phone: order.driver.user?.phone ?? null,
+            isOnline: order.driver.isOnline,
+            status: order.driver.status,
+            vehicleType: order.driver.vehicleType ?? null,
+            licensePlate: order.driver.licensePlate ?? null,
+            currentLocation: {
+              lat: order.driver.currentLat ?? null,
+              lng: order.driver.currentLng ?? null,
+              lastLocationAt: order.driver.lastLocationAt ?? null,
+            },
+          }
+        : null,
+      delivery: {
+        addressText: order.deliveryAddressText ?? null,
+        lat: order.deliveryLat ?? null,
+        lng: order.deliveryLng ?? null,
+      },
+      store: {
+        name: storeConfig.name,
+        address: storeConfig.address,
+        lat: storeConfig.lat,
+        lng: storeConfig.lng,
+      },
+      assignedAt: order.assignedAt,
+      pickedUpAt: order.pickedUpAt,
+      deliveredAt: order.deliveredAt,
+      driverConfirmedDelivered: order.driverConfirmedDelivered,
+      customerConfirmedDelivered: order.customerConfirmedDelivered,
+    };
+  }
+
   private mapOrderResponse(order: Order | null) {
     if (!order) {
       throw new NotFoundException('Order not found');
@@ -395,6 +605,11 @@ export class OrderService {
       paymentMethod: order.paymentMethod,
       paymentStatus: order.paymentStatus,
       totalAmount: order.totalAmount,
+      delivery: {
+        addressText: order.deliveryAddressText ?? null,
+        lat: order.deliveryLat ?? null,
+        lng: order.deliveryLng ?? null,
+      },
       assignedAt: order.assignedAt,
       pickedUpAt: order.pickedUpAt,
       deliveredAt: order.deliveredAt,

@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Get,
   Param,
   ParseIntPipe,
   Patch,
@@ -21,6 +22,12 @@ import { MenuService } from 'src/services/menu.service';
 @Controller('staff/menu-items')
 export class StaffMenuController {
   constructor(private readonly menuService: MenuService) {}
+
+  @ApiOperation({ summary: 'Get menu items for staff availability management' })
+  @Get()
+  async getStaffMenu() {
+    return this.menuService.getStaffMenu();
+  }
 
   @ApiOperation({ summary: 'Staff toggle menu item availability' })
   @Patch(':id/availability')

@@ -15,6 +15,8 @@ import { DriverRepository } from 'src/repositories/driver.repository';
 import { OrderRepository } from 'src/repositories/order.repository';
 import { WalletRepository } from 'src/repositories/wallet.repository';
 import { WalletTransactionRepository } from 'src/repositories/wallet-transaction.repository';
+import { storeConfig } from 'src/config/store.config';
+import { TrackingGateway } from 'src/gateways/tracking.gateway';
 
 const STAFF_ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
   [OrderStatus.PENDING]: [OrderStatus.CONFIRMED],
@@ -29,16 +31,27 @@ const STAFF_ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
 @Injectable()
 export class StaffOrderService {
   constructor(
-    private readonly dataSource: DataSource,
-    private readonly orderRepository: OrderRepository,
-    private readonly driverRepository: DriverRepository,
-    private readonly walletRepository: WalletRepository,
-    private readonly walletTransactionRepository: WalletTransactionRepository,
-  ) {}
+  private readonly dataSource: DataSource,
+  private readonly orderRepository: OrderRepository,
+  private readonly driverRepository: DriverRepository,
+  private readonly walletRepository: WalletRepository,
+  private readonly walletTransactionRepository: WalletTransactionRepository,
+  private readonly trackingGateway: TrackingGateway,
+) {}
 
   async getAllOrders(query: StaffOrderQueryDto) {
     const orders = await this.orderRepository.findAll(query.status);
     return orders.map((order) => this.mapOrderResponse(order));
+  }
+
+  async getOrderTracking(orderId: string) {
+    const order = await this.orderRepository.findById(orderId);
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    return this.mapTrackingResponse(order);
   }
 
   async getOrderDetail(orderId: string) {
@@ -52,140 +65,170 @@ export class StaffOrderService {
   }
 
   async updateOrderStatus(orderId: string, nextStatus: OrderStatus) {
-    return this.dataSource.transaction(async (manager) => {
-      const order = await this.orderRepository.findByIdForUpdate(
-        orderId,
-        manager,
+  const hydratedOrder = await this.dataSource.transaction(async (manager) => {
+    const order = await this.orderRepository.findByIdForUpdate(
+      orderId,
+      manager,
+    );
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    if (
+      nextStatus === OrderStatus.PICKED_UP ||
+      nextStatus === OrderStatus.DELIVERED
+    ) {
+      throw new BadRequestException(
+        'Staff cannot set PICKED_UP or DELIVERED',
       );
+    }
 
-      if (!order) {
-        throw new NotFoundException('Order not found');
-      }
+    if (order.status === nextStatus) {
+      return this.getHydratedOrderOrFail(order.id, manager);
+    }
 
-      if (
-        nextStatus === OrderStatus.PICKED_UP ||
-        nextStatus === OrderStatus.DELIVERED
-      ) {
-        throw new BadRequestException(
-          'Staff cannot set PICKED_UP or DELIVERED',
-        );
-      }
+    this.validateTransition(order.status, nextStatus);
 
-      if (order.status === nextStatus) {
-        const hydratedOrder = await this.getHydratedOrderOrFail(order.id, manager);
-        return this.mapOrderResponse(hydratedOrder);
-      }
+    order.status = nextStatus;
+    await this.orderRepository.save(order, manager);
 
-      this.validateTransition(order.status, nextStatus);
+    return this.getHydratedOrderOrFail(order.id, manager);
+  });
 
-      order.status = nextStatus;
-      await this.orderRepository.save(order, manager);
+  this.emitTrackingStatus(hydratedOrder);
 
-      const hydratedOrder = await this.getHydratedOrderOrFail(order.id, manager);
-      return this.mapOrderResponse(hydratedOrder);
-    });
-  }
+  return this.mapOrderResponse(hydratedOrder);
+}
 
   async assignDriver(orderId: string, driverId: string) {
-    return this.dataSource.transaction(async (manager) => {
-      const order = await this.orderRepository.findByIdForUpdate(orderId, manager);
+  const hydratedOrder = await this.dataSource.transaction(async (manager) => {
+    const order = await this.orderRepository.findByIdForUpdate(orderId, manager);
 
-      if (!order) {
-        throw new NotFoundException('Order not found');
-      }
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
 
-      if (order.status !== OrderStatus.READY) {
-        throw new BadRequestException(
-          'Only READY orders can be assigned to driver',
-        );
-      }
+    if (order.status !== OrderStatus.READY) {
+      throw new BadRequestException(
+        'Only READY orders can be assigned to driver',
+      );
+    }
 
-      if (order.driverId) {
-        throw new BadRequestException('Order already has assigned driver');
-      }
+    if (order.driverId) {
+      throw new BadRequestException('Order already has assigned driver');
+    }
 
-      const driver = await this.driverRepository.findByUserId(driverId, manager);
+    const driver = await this.driverRepository.findByUserIdForUpdate(
+      driverId,
+      manager,
+    );
 
-      if (!driver) {
-        throw new NotFoundException('Driver not found');
-      }
+    if (!driver) {
+      throw new NotFoundException('Driver not found');
+    }
 
-      if (driver.status !== DriverStatus.ACTIVE) {
-        throw new BadRequestException('Driver is not active');
-      }
+    if (driver.status !== DriverStatus.ACTIVE) {
+      throw new BadRequestException('Driver is not active');
+    }
 
-      if (!driver.user?.isActive) {
-        throw new BadRequestException('Driver account is inactive');
-      }
+    if (!driver.user?.isActive) {
+      throw new BadRequestException('Driver account is inactive');
+    }
 
-      if (!driver.isOnline) {
-        throw new BadRequestException('Driver is offline');
-      }
+    if (!driver.isOnline) {
+      throw new BadRequestException('Driver is offline');
+    }
 
-      order.driverId = driver.userId;
-      order.assignedAt = new Date();
+    const driverIsBusy = await this.orderRepository.existsActiveOrderByDriverId(
+      driver.userId,
+      manager,
+    );
 
-      await this.orderRepository.save(order, manager);
+    if (driverIsBusy) {
+      throw new BadRequestException(
+        'Driver is already handling another active order',
+      );
+    }
 
-      const hydratedOrder = await this.getHydratedOrderOrFail(order.id, manager);
-      return this.mapOrderResponse(hydratedOrder);
-    });
-  }
+    order.driverId = driver.userId;
+    order.assignedAt = new Date();
+
+    await this.orderRepository.save(order, manager);
+
+    return this.getHydratedOrderOrFail(order.id, manager);
+  });
+
+  this.emitTrackingStatus(hydratedOrder);
+
+  return this.mapOrderResponse(hydratedOrder);
+}
 
   async cancelOrder(orderId: string) {
-    return this.dataSource.transaction(async (manager) => {
-      const order = await this.orderRepository.findByIdForUpdate(
-        orderId,
-        manager,
-      );
+  const hydratedOrder = await this.dataSource.transaction(async (manager) => {
+    const order = await this.orderRepository.findByIdForUpdate(
+      orderId,
+      manager,
+    );
 
-      if (!order) {
-        throw new NotFoundException('Order not found');
-      }
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
 
-      if (order.status === OrderStatus.CANCELLED) {
-        const hydratedOrder = await this.getHydratedOrderOrFail(order.id, manager);
-        return this.mapOrderResponse(hydratedOrder);
-      }
+    if (order.status === OrderStatus.CANCELLED) {
+      return this.getHydratedOrderOrFail(order.id, manager);
+    }
 
-      if (
-        order.status === OrderStatus.PICKED_UP ||
-        order.status === OrderStatus.DELIVERED
-      ) {
-        throw new BadRequestException('Order cannot be cancelled after pickup');
-      }
+    if (
+      order.status === OrderStatus.PICKED_UP ||
+      order.status === OrderStatus.DELIVERED
+    ) {
+      throw new BadRequestException('Order cannot be cancelled after pickup');
+    }
 
-      if (
-        order.paymentMethod === PaymentMethod.WALLET &&
-        order.paymentStatus === PaymentStatus.PAID
-      ) {
-        await this.refundToWallet(order, manager);
-      } else {
-        order.status = OrderStatus.CANCELLED;
-        await this.orderRepository.save(order, manager);
-      }
+    if (
+      order.paymentMethod === PaymentMethod.WALLET &&
+      order.paymentStatus === PaymentStatus.PAID
+    ) {
+      await this.refundToWallet(order, manager);
+    } else {
+      order.status = OrderStatus.CANCELLED;
+      await this.orderRepository.save(order, manager);
+    }
 
-      const hydratedOrder = await this.getHydratedOrderOrFail(order.id, manager);
-      return this.mapOrderResponse(hydratedOrder);
-    });
-  }
+    return this.getHydratedOrderOrFail(order.id, manager);
+  });
+
+  this.emitTrackingStatus(hydratedOrder);
+
+  return this.mapOrderResponse(hydratedOrder);
+}
 
   async getAvailableDrivers() {
-  const drivers = await this.driverRepository.findAvailableDrivers();
+    const candidateDrivers = await this.driverRepository.findAvailableDrivers();
 
-  return drivers.map((driver) => ({
-    userId: driver.userId,
-    fullName: driver.user?.fullName ?? null,
-    email: driver.user?.email ?? null,
-    phone: driver.user?.phone ?? null,
-    userIsActive: driver.user?.isActive ?? false,
-    status: driver.status,
-    isOnline: driver.isOnline,
-    vehicleType: driver.vehicleType,
-    licensePlate: driver.licensePlate,
-    updatedAt: driver.updatedAt,
-  }));
-}
+    const busyDriverIds = await this.orderRepository.findBusyDriverIds(
+      candidateDrivers.map((driver) => driver.userId),
+    );
+
+    const drivers = busyDriverIds.length
+      ? await this.driverRepository.findAvailableDrivers(busyDriverIds)
+      : candidateDrivers;
+
+    return drivers.map((driver) => ({
+      userId: driver.userId,
+      fullName: driver.user?.fullName ?? null,
+      email: driver.user?.email ?? null,
+      phone: driver.user?.phone ?? null,
+      userIsActive: driver.user?.isActive ?? false,
+      status: driver.status,
+      isOnline: driver.isOnline,
+      isBusy: false,
+      vehicleType: driver.vehicleType,
+      licensePlate: driver.licensePlate,
+      updatedAt: driver.updatedAt,
+    }));
+  }
 
   private validateTransition(
     currentStatus: OrderStatus,
@@ -244,6 +287,57 @@ export class StaffOrderService {
     }
 
     return order;
+  }
+
+  private emitTrackingStatus(order: Order) {
+  try {
+    this.trackingGateway.emitOrderStatusUpdated(
+      String(order.id),
+      this.mapTrackingResponse(order),
+    );
+  } catch {
+    void 0;
+  }
+}
+
+  private mapTrackingResponse(order: Order) {
+    return {
+      orderId: order.id,
+      status: order.status,
+      driver: order.driver
+        ? {
+            userId: order.driver.userId,
+            fullName: order.driver.user?.fullName ?? null,
+            email: order.driver.user?.email ?? null,
+            phone: order.driver.user?.phone ?? null,
+            isOnline: order.driver.isOnline,
+            status: order.driver.status,
+            vehicleType: order.driver.vehicleType ?? null,
+            licensePlate: order.driver.licensePlate ?? null,
+            currentLocation: {
+              lat: order.driver.currentLat ?? null,
+              lng: order.driver.currentLng ?? null,
+              lastLocationAt: order.driver.lastLocationAt ?? null,
+            },
+          }
+        : null,
+      delivery: {
+        addressText: order.deliveryAddressText ?? null,
+        lat: order.deliveryLat ?? null,
+        lng: order.deliveryLng ?? null,
+      },
+      store: {
+        name: storeConfig.name,
+        address: storeConfig.address,
+        lat: storeConfig.lat,
+        lng: storeConfig.lng,
+      },
+      assignedAt: order.assignedAt,
+      pickedUpAt: order.pickedUpAt,
+      deliveredAt: order.deliveredAt,
+      driverConfirmedDelivered: order.driverConfirmedDelivered,
+      customerConfirmedDelivered: order.customerConfirmedDelivered,
+    };
   }
 
   private mapOrderResponse(order: Order) {

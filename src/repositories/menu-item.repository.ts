@@ -81,6 +81,28 @@ export class MenuItemRepository {
     return queryBuilder.getOne();
   }
 
+  async findStaffMenu(): Promise<MenuItem[]> {
+  const queryBuilder = this.repository
+    .createQueryBuilder('menuItem')
+    .leftJoinAndSelect('menuItem.category', 'category')
+    .leftJoinAndSelect('menuItem.images', 'images')
+    .where('menuItem.isActive = :menuItemIsActive', {
+      menuItemIsActive: true,
+    })
+    .andWhere('category.isActive = :categoryIsActive', {
+      categoryIsActive: true,
+    });
+
+  queryBuilder.orderBy('category.sortOrder', 'ASC');
+  queryBuilder.addOrderBy('category.id', 'ASC');
+  queryBuilder.addOrderBy('menuItem.sortOrder', 'ASC');
+  queryBuilder.addOrderBy('menuItem.id', 'ASC');
+  queryBuilder.addOrderBy('images.sortOrder', 'ASC');
+  queryBuilder.addOrderBy('images.id', 'ASC');
+
+  return queryBuilder.getMany();
+}
+
   async findAvailableItemForCart(id: number): Promise<MenuItem | null> {
     const queryBuilder = this.repository
       .createQueryBuilder('menuItem')

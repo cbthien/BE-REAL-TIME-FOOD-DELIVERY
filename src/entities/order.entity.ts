@@ -105,6 +105,27 @@ export class Order {
   })
   customerConfirmedDelivered: boolean;
 
+  @Column({
+    name: 'delivery_address_text',
+    type: 'text',
+    nullable: true,
+  })
+  deliveryAddressText: string | null;
+
+  @Column({
+    name: 'delivery_lat',
+    type: 'double precision',
+    nullable: true,
+  })
+  deliveryLat: number | null;
+
+  @Column({
+    name: 'delivery_lng',
+    type: 'double precision',
+    nullable: true,
+  })
+  deliveryLng: number | null;
+
   @OneToMany(() => OrderItem, (orderItem) => orderItem.order, {
     cascade: false,
   })

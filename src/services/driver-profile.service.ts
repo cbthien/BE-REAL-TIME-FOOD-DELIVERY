@@ -15,6 +15,23 @@ export class DriverProfileService {
     private readonly driverRepository: Repository<Driver>,
   ) {}
 
+  async getMyProfile(userId: string) {
+  const driver = await this.driverRepository.findOne({
+    where: { userId },
+    relations: ['user'],
+  });
+
+  if (!driver) {
+    throw new NotFoundException('Driver profile not found');
+  }
+
+  if (!driver.user) {
+    throw new NotFoundException('Driver user not found');
+  }
+
+  return this.mapDriverProfileResponse(driver);
+}
+
   async setOnlineStatus(userId: string, isOnline: boolean) {
     const driver = await this.driverRepository.findOne({
       where: { userId },

@@ -32,6 +32,15 @@ export class OrderController {
     return this.orderService.getMyOrders(user.id);
   }
 
+  @ApiOperation({ summary: 'Customer get tracking of my order' })
+  @Get(':id/tracking')
+  async getMyOrderTracking(
+    @CurrentUser() user: any,
+    @Param('id') orderId: string,
+  ) {
+    return this.orderService.getMyOrderTracking(user.id, orderId);
+  }
+
   @ApiOperation({ summary: 'Customer get my order detail' })
   @Get(':id')
   async getMyOrderDetail(

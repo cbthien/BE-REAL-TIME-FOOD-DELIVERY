@@ -29,6 +29,7 @@ import { DriverOrderController } from './controllers/driver-order.controller';
 import { StaffMenuController } from './controllers/staff-menu.controller';
 import { AdminController } from './controllers/admin.controller';
 import { DriverProfileController } from './controllers/driver-profile.controller';
+import { StoreController } from './controllers/store.controller';
 
 import { AuthService } from './services/auth.service';
 import { MenuService } from './services/menu.service';
@@ -38,6 +39,7 @@ import { StaffOrderService } from './services/staff-order.service';
 import { DriverOrderService } from './services/driver-order.service';
 import { AdminService } from './services/admin.service';
 import { DriverProfileService } from './services/driver-profile.service';
+import { StoreService } from './services/store.service';
 
 import { JwtStrategy } from './auth/jwt.strategy';
 import { AuthModule } from './auth/auth.module';
@@ -55,8 +57,7 @@ import { WalletTransactionRepository } from './repositories/wallet-transaction.r
 
 import { MenuSeedService } from './seeds/menu.seed';
 import { AdminSeedService } from './seeds/admin.seed';
-
-
+import { TrackingGateway } from './gateways/tracking.gateway';
 
 @Module({
   imports: [
@@ -95,6 +96,7 @@ import { AdminSeedService } from './seeds/admin.seed';
     StaffMenuController,
     AdminController,
     DriverProfileController,
+    StoreController,
   ],
   providers: [
     AuthService,
@@ -105,6 +107,7 @@ import { AdminSeedService } from './seeds/admin.seed';
     DriverOrderService,
     AdminService,
     DriverProfileService,
+    StoreService,
     JwtStrategy,
     MenuCategoryRepository,
     MenuItemRepository,
@@ -118,8 +121,7 @@ import { AdminSeedService } from './seeds/admin.seed';
     WalletTransactionRepository,
     MenuSeedService,
     AdminSeedService,
-    
-    
+    TrackingGateway,
   ],
 })
 export class AppModule {}

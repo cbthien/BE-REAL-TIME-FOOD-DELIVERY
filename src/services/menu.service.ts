@@ -89,6 +89,11 @@ export class MenuService {
     return this.menuItemRepository.save(menuItem);
   }
 
+  async getStaffMenu(): Promise<MenuItemResponseDto[]> {
+  const menuItems = await this.menuItemRepository.findStaffMenu();
+  return menuItems.map((menuItem) => this.toPublicResponse(menuItem));
+}
+
   async updateAvailability(id: number, isAvailable: boolean): Promise<MenuItem> {
     const menuItem = await this.menuItemRepository.findById(id);
 

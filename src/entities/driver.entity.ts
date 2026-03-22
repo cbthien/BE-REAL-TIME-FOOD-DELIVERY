@@ -51,6 +51,27 @@ export class Driver {
   })
   licensePlate?: string;
 
+  @Column({
+    name: 'current_lat',
+    type: 'double precision',
+    nullable: true,
+  })
+  currentLat: number | null;
+
+  @Column({
+    name: 'current_lng',
+    type: 'double precision',
+    nullable: true,
+  })
+  currentLng: number | null;
+
+  @Column({
+    name: 'last_location_at',
+    type: 'timestamp',
+    nullable: true,
+  })
+  lastLocationAt: Date | null;
+
   @OneToMany(() => Order, (order) => order.driver)
   orders: Order[];
 

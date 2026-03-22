@@ -37,6 +37,13 @@ export class StaffOrderController {
     return this.staffOrderService.getAllOrders(query);
   }
 
+  @ApiOperation({ summary: 'Get tracking of an order for staff' })
+  @ApiParam({ name: 'orderId', description: 'Order ID' })
+  @Get(':orderId/tracking')
+  async getOrderTracking(@Param('orderId') orderId: string) {
+    return this.staffOrderService.getOrderTracking(orderId);
+  }
+
   @ApiOperation({ summary: 'Get order detail for staff' })
   @ApiParam({ name: 'orderId', description: 'Order ID' })
   @Get(':orderId')
