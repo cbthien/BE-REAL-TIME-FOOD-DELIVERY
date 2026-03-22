@@ -7,6 +7,7 @@ import { DataSource } from 'typeorm';
 import { UpdateDriverLocationDto } from 'src/dto/driver/update-driver-location.dto';
 import { Driver } from 'src/entities/driver.entity';
 import { Order } from 'src/entities/order.entity';
+import { storeConfig } from 'src/config/store.config';
 import { DriverStatus } from 'src/enums/driver-status.enum';
 import { OrderStatus } from 'src/enums/order-status.enum';
 import { TrackingGateway } from 'src/gateways/tracking.gateway';
@@ -55,7 +56,7 @@ export class DriverOrderService {
   }
 
   async confirmPickUp(userId: string, orderId: string) {
-    return this.dataSource.transaction(async (manager) => {
+    const hydratedOrder = await this.dataSource.transaction(async (manager) => {
       const driver = await this.driverRepository.findByUserId(userId, manager);
 
       if (!driver) {
@@ -85,14 +86,18 @@ export class DriverOrderService {
 
       await this.orderRepository.save(order, manager);
 
-      const hydratedOrder = await this.orderRepository.findById(order.id, manager);
+      const saved = await this.orderRepository.findById(order.id, manager);
 
-      if (!hydratedOrder) {
+      if (!saved) {
         throw new NotFoundException('Order not found after pickup');
       }
 
-      return this.mapOrderResponse(hydratedOrder);
+      return saved;
     });
+
+    this.emitTrackingStatus(hydratedOrder);
+
+    return this.mapOrderResponse(hydratedOrder);
   }
 
   async updateCurrentLocation(
@@ -165,7 +170,7 @@ export class DriverOrderService {
   }
 
   async confirmDelivered(userId: string, orderId: string) {
-    return this.dataSource.transaction(async (manager) => {
+    const hydratedOrder = await this.dataSource.transaction(async (manager) => {
       const driver = await this.driverRepository.findByUserId(userId, manager);
 
       if (!driver) {
@@ -190,33 +195,80 @@ export class DriverOrderService {
         );
       }
 
-      if (order.driverConfirmedDelivered) {
-        const hydratedOrder = await this.orderRepository.findById(order.id, manager);
+      if (!order.driverConfirmedDelivered) {
+        order.driverConfirmedDelivered = true;
 
-        if (!hydratedOrder) {
-          throw new NotFoundException('Order not found');
+        if (order.customerConfirmedDelivered) {
+          order.status = OrderStatus.DELIVERED;
+          order.deliveredAt = new Date();
         }
 
-        return this.mapOrderResponse(hydratedOrder);
+        await this.orderRepository.save(order, manager);
       }
 
-      order.driverConfirmedDelivered = true;
+      const saved = await this.orderRepository.findById(order.id, manager);
 
-      if (order.customerConfirmedDelivered) {
-        order.status = OrderStatus.DELIVERED;
-        order.deliveredAt = new Date();
-      }
-
-      await this.orderRepository.save(order, manager);
-
-      const hydratedOrder = await this.orderRepository.findById(order.id, manager);
-
-      if (!hydratedOrder) {
+      if (!saved) {
         throw new NotFoundException('Order not found after delivery confirmation');
       }
 
-      return this.mapOrderResponse(hydratedOrder);
+      return saved;
     });
+
+    this.emitTrackingStatus(hydratedOrder);
+
+    return this.mapOrderResponse(hydratedOrder);
+  }
+
+  private emitTrackingStatus(order: Order) {
+    try {
+      this.trackingGateway.emitOrderStatusUpdated(
+        String(order.id),
+        this.mapTrackingSnapshot(order),
+      );
+    } catch {
+      void 0;
+    }
+  }
+
+  private mapTrackingSnapshot(order: Order) {
+    return {
+      orderId: String(order.id),
+      status: order.status,
+      driver: order.driver
+        ? {
+            userId: order.driver.userId,
+            fullName: order.driver.user?.fullName ?? null,
+            email: order.driver.user?.email ?? null,
+            phone: order.driver.user?.phone ?? null,
+            isOnline: order.driver.isOnline,
+            status: order.driver.status,
+            vehicleType: order.driver.vehicleType ?? null,
+            licensePlate: order.driver.licensePlate ?? null,
+            currentLocation: {
+              lat: order.driver.currentLat ?? null,
+              lng: order.driver.currentLng ?? null,
+              lastLocationAt: order.driver.lastLocationAt ?? null,
+            },
+          }
+        : null,
+      delivery: {
+        addressText: order.deliveryAddressText ?? null,
+        lat: order.deliveryLat ?? null,
+        lng: order.deliveryLng ?? null,
+      },
+      store: {
+        name: storeConfig.name,
+        address: storeConfig.address,
+        lat: storeConfig.lat,
+        lng: storeConfig.lng,
+      },
+      assignedAt: order.assignedAt,
+      pickedUpAt: order.pickedUpAt,
+      deliveredAt: order.deliveredAt,
+      driverConfirmedDelivered: order.driverConfirmedDelivered,
+      customerConfirmedDelivered: order.customerConfirmedDelivered,
+    };
   }
 
   private mapDriverLocationResponse(order: Order, driver: Driver) {
@@ -263,7 +315,13 @@ export class DriverOrderService {
       paymentMethod: order.paymentMethod,
       paymentStatus: order.paymentStatus,
       totalAmount: order.totalAmount,
-      /** Điểm giao (khách) — để map marker D + Directions */
+      pickupAddress: storeConfig.address,
+      store: {
+        name: storeConfig.name,
+        address: storeConfig.address,
+        lat: storeConfig.lat,
+        lng: storeConfig.lng,
+      },
       delivery: {
         addressText: order.deliveryAddressText ?? null,
         lat: order.deliveryLat ?? null,
@@ -286,6 +344,11 @@ export class DriverOrderService {
       deliveredAt: order.deliveredAt,
       driverConfirmedDelivered: order.driverConfirmedDelivered,
       customerConfirmedDelivered: order.customerConfirmedDelivered,
+      deliveryCompletion: {
+        driverConfirmed: order.driverConfirmedDelivered,
+        customerConfirmed: order.customerConfirmedDelivered,
+        completed: order.status === OrderStatus.DELIVERED,
+      },
       items,
       createdAt: order.createdAt,
       updatedAt: order.updatedAt,

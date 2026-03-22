@@ -32,34 +32,44 @@ export class DriverRepository {
       where: { userId },
       lock: { mode: 'pessimistic_write' },
     });
+
     if (!driver) {
       return null;
     }
+
     const user = await manager.getRepository(User).findOne({
       where: { id: userId },
     });
+
     if (user) {
       driver.user = user;
     }
+
     return driver;
   }
 
-  async findAvailableDrivers(manager?: EntityManager): Promise<Driver[]> {
+  async findAvailableDrivers(
+    excludeDriverIds: string[] = [],
+    manager?: EntityManager,
+  ): Promise<Driver[]> {
     const repo = manager ? manager.getRepository(Driver) : this.repository;
 
-    return repo.find({
-      where: {
-        status: DriverStatus.ACTIVE,
-        isOnline: true,
-        user: {
-          isActive: true,
-        },
-      },
-      relations: ['user'],
-      order: {
-        updatedAt: 'DESC',
-      },
-    });
+    const qb = repo
+      .createQueryBuilder('driver')
+      .innerJoinAndSelect('driver.user', 'user')
+      .where('driver.status = :driverStatus', {
+        driverStatus: DriverStatus.ACTIVE,
+      })
+      .andWhere('driver.isOnline = :isOnline', { isOnline: true })
+      .andWhere('user.isActive = :isActive', { isActive: true });
+
+    if (excludeDriverIds.length > 0) {
+      qb.andWhere('driver.userId NOT IN (:...excludeDriverIds)', {
+        excludeDriverIds,
+      });
+    }
+
+    return qb.orderBy('driver.updatedAt', 'DESC').getMany();
   }
 
   async save(driver: Driver, manager?: EntityManager): Promise<Driver> {

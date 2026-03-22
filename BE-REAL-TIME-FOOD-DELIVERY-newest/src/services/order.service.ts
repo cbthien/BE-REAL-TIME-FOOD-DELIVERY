@@ -25,6 +25,7 @@ import { OrderItemRepository } from 'src/repositories/order-item.repository';
 import { WalletRepository } from 'src/repositories/wallet.repository';
 import { WalletTransactionRepository } from 'src/repositories/wallet-transaction.repository';
 import { storeConfig } from 'src/config/store.config';
+import { TrackingGateway } from 'src/gateways/tracking.gateway';
 
 const CUSTOMER_CANCELLABLE_STATUSES: OrderStatus[] = [
   OrderStatus.PENDING,
@@ -43,14 +44,15 @@ type DeliveryAddressSnapshot = {
 @Injectable()
 export class OrderService {
   constructor(
-    private readonly dataSource: DataSource,
-    private readonly customerRepository: CustomerRepository,
-    private readonly cartRepository: CartRepository,
-    private readonly orderRepository: OrderRepository,
-    private readonly orderItemRepository: OrderItemRepository,
-    private readonly walletRepository: WalletRepository,
-    private readonly walletTransactionRepository: WalletTransactionRepository,
-  ) {}
+  private readonly dataSource: DataSource,
+  private readonly customerRepository: CustomerRepository,
+  private readonly cartRepository: CartRepository,
+  private readonly orderRepository: OrderRepository,
+  private readonly orderItemRepository: OrderItemRepository,
+  private readonly walletRepository: WalletRepository,
+  private readonly walletTransactionRepository: WalletTransactionRepository,
+  private readonly trackingGateway: TrackingGateway,
+) {}
 
   async createOrder(userId: string, dto: CreateOrderDto) {
     return this.dataSource.transaction(async (manager) => {
@@ -154,52 +156,56 @@ export class OrderService {
     return this.mapOrderResponse(order);
   }
 
-  async cancelMyOrder(userId: string, orderId: string) {
-    return this.dataSource.transaction(async (manager) => {
-      const customer = await this.getCustomerOrFail(userId, manager);
+ async cancelMyOrder(userId: string, orderId: string) {
+  const updatedOrder = await this.dataSource.transaction(async (manager) => {
+    const customer = await this.getCustomerOrFail(userId, manager);
 
-      const order = await this.orderRepository.findByIdAndCustomerIdForUpdate(
-        orderId,
-        customer.userId,
-        manager,
-      );
+    const order = await this.orderRepository.findByIdAndCustomerIdForUpdate(
+      orderId,
+      customer.userId,
+      manager,
+    );
 
-      if (!order) {
-        throw new NotFoundException('Order not found');
-      }
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
 
-      if (order.status === OrderStatus.CANCELLED) {
-        const saved = await this.orderRepository.findById(order.id, manager);
-        if (!saved) {
-          throw new NotFoundException('Order not found after cancel');
-        }
-        return this.mapOrderResponse(saved);
-      }
-
-      if (!CUSTOMER_CANCELLABLE_STATUSES.includes(order.status)) {
-        throw new BadRequestException(
-          `Order cannot be cancelled at status "${order.status}".`,
-        );
-      }
-
-      if (
-        order.paymentMethod === PaymentMethod.WALLET &&
-        order.paymentStatus === PaymentStatus.PAID
-      ) {
-        await this.refundToWallet(customer.userId, order, manager);
-      } else {
-        order.status = OrderStatus.CANCELLED;
-        await this.orderRepository.save(order, manager);
-      }
-
-      const updatedOrder = await this.orderRepository.findById(order.id, manager);
-      if (!updatedOrder) {
+    if (order.status === OrderStatus.CANCELLED) {
+      const saved = await this.orderRepository.findById(order.id, manager);
+      if (!saved) {
         throw new NotFoundException('Order not found after cancel');
       }
+      return saved;
+    }
 
-      return this.mapOrderResponse(updatedOrder);
-    });
-  }
+    if (!CUSTOMER_CANCELLABLE_STATUSES.includes(order.status)) {
+      throw new BadRequestException(
+        `Order cannot be cancelled at status "${order.status}".`,
+      );
+    }
+
+    if (
+      order.paymentMethod === PaymentMethod.WALLET &&
+      order.paymentStatus === PaymentStatus.PAID
+    ) {
+      await this.refundToWallet(customer.userId, order, manager);
+    } else {
+      order.status = OrderStatus.CANCELLED;
+      await this.orderRepository.save(order, manager);
+    }
+
+    const saved = await this.orderRepository.findById(order.id, manager);
+    if (!saved) {
+      throw new NotFoundException('Order not found after cancel');
+    }
+
+    return saved;
+  });
+
+  this.emitTrackingStatus(updatedOrder);
+
+  return this.mapOrderResponse(updatedOrder);
+}
 
   async confirmDelivered(userId: string, orderId: string) {
     return this.dataSource.transaction(async (manager) => {
@@ -483,6 +489,21 @@ export class OrderService {
     await this.orderRepository.save(order, manager);
   }
 
+  private emitTrackingStatus(order: Order | null) {
+  if (!order) {
+    return;
+  }
+
+  try {
+    this.trackingGateway.emitOrderStatusUpdated(
+      String(order.id),
+      this.mapTrackingResponse(order),
+    );
+  } catch {
+    void 0;
+  }
+}
+
   private mapTrackingResponse(order: Order | null) {
     if (!order) {
       throw new NotFoundException('Order not found');
@@ -525,6 +546,7 @@ export class OrderService {
       driverConfirmedDelivered: order.driverConfirmedDelivered,
       customerConfirmedDelivered: order.customerConfirmedDelivered,
     };
+    
   }
 
   private mapOrderResponse(order: Order | null) {

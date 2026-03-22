@@ -66,13 +66,22 @@ export class TrackingGateway {
   }
 
   emitOrderLocationUpdated(orderId: string, payload: unknown) {
+    this.emitToOrderRoom(orderId, 'order.location.updated', payload);
+    this.emitToOrderRoom(orderId, 'order.tracking.updated', payload);
+  }
+
+  emitOrderStatusUpdated(orderId: string, payload: unknown) {
+    this.emitToOrderRoom(orderId, 'order.status.updated', payload);
+    this.emitToOrderRoom(orderId, 'order.tracking.updated', payload);
+  }
+
+  private emitToOrderRoom(orderId: string, event: string, payload: unknown) {
     try {
       if (!this.server) {
         return;
       }
-      this.server
-        .to(this.getOrderRoom(orderId))
-        .emit('order.location.updated', payload);
+
+      this.server.to(this.getOrderRoom(orderId)).emit(event, payload);
     } catch {
       void 0;
     }

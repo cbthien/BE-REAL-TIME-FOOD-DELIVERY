@@ -2,7 +2,12 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Order } from 'src/entities/order.entity';
 import { OrderStatus } from 'src/enums/order-status.enum';
-import { EntityManager, Repository } from 'typeorm';
+import { EntityManager, In, Repository } from 'typeorm';
+
+const DRIVER_BUSY_ORDER_STATUSES: OrderStatus[] = [
+  OrderStatus.READY,
+  OrderStatus.PICKED_UP,
+];
 
 @Injectable()
 export class OrderRepository {
@@ -118,6 +123,47 @@ export class OrderRepository {
       where: { id, driverId },
       lock: { mode: 'pessimistic_write' },
     });
+  }
+
+  async existsActiveOrderByDriverId(
+    driverId: string,
+    manager?: EntityManager,
+  ): Promise<boolean> {
+    const repo = manager ? manager.getRepository(Order) : this.repository;
+
+    const count = await repo.count({
+      where: {
+        driverId,
+        status: In(DRIVER_BUSY_ORDER_STATUSES),
+      },
+    });
+
+    return count > 0;
+  }
+
+  async findBusyDriverIds(
+    driverIds: string[],
+    manager?: EntityManager,
+  ): Promise<string[]> {
+    if (driverIds.length === 0) {
+      return [];
+    }
+
+    const repo = manager ? manager.getRepository(Order) : this.repository;
+
+    const rows = await repo
+      .createQueryBuilder('order')
+      .select('order.driverId', 'driverId')
+      .where('order.driverId IN (:...driverIds)', { driverIds })
+      .andWhere('order.status IN (:...busyStatuses)', {
+        busyStatuses: DRIVER_BUSY_ORDER_STATUSES,
+      })
+      .groupBy('order.driverId')
+      .getRawMany<{ driverId: string | null }>();
+
+    return rows
+      .map((row) => row.driverId)
+      .filter((driverId): driverId is string => Boolean(driverId));
   }
 
   async create(
