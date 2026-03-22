@@ -21,15 +21,18 @@ export class OrderRepository {
     return repo.save(order);
   }
 
-  async findById(
-    id: string,
-    manager?: EntityManager,
-  ): Promise<Order | null> {
+  async findById(id: string, manager?: EntityManager): Promise<Order | null> {
     const repo = manager ? manager.getRepository(Order) : this.repository;
 
     return repo.findOne({
       where: { id },
-      relations: ['customer', 'customer.user', 'driver', 'driver.user', 'items'],
+      relations: [
+        'customer',
+        'customer.user',
+        'driver',
+        'driver.user',
+        'items',
+      ],
     });
   }
 
@@ -46,7 +49,13 @@ export class OrderRepository {
   async findAll(status?: OrderStatus): Promise<Order[]> {
     return this.repository.find({
       where: status ? { status } : {},
-      relations: ['customer', 'customer.user', 'driver', 'driver.user', 'items'],
+      relations: [
+        'customer',
+        'customer.user',
+        'driver',
+        'driver.user',
+        'items',
+      ],
       order: { createdAt: 'DESC' },
     });
   }
@@ -60,7 +69,13 @@ export class OrderRepository {
 
     return repo.findOne({
       where: { id, customerId },
-      relations: ['customer', 'customer.user', 'driver', 'driver.user', 'items'],
+      relations: [
+        'customer',
+        'customer.user',
+        'driver',
+        'driver.user',
+        'items',
+      ],
     });
   }
 
@@ -83,7 +98,13 @@ export class OrderRepository {
 
     return repo.find({
       where: { customerId },
-      relations: ['customer', 'customer.user', 'driver', 'driver.user', 'items'],
+      relations: [
+        'customer',
+        'customer.user',
+        'driver',
+        'driver.user',
+        'items',
+      ],
       order: { createdAt: 'DESC' },
     });
   }
@@ -96,7 +117,13 @@ export class OrderRepository {
 
     return repo.find({
       where: { driverId },
-      relations: ['customer', 'customer.user', 'driver', 'driver.user', 'items'],
+      relations: [
+        'customer',
+        'customer.user',
+        'driver',
+        'driver.user',
+        'items',
+      ],
       order: { createdAt: 'DESC' },
     });
   }
@@ -110,7 +137,13 @@ export class OrderRepository {
 
     return repo.findOne({
       where: { id, driverId },
-      relations: ['customer', 'customer.user', 'driver', 'driver.user', 'items'],
+      relations: [
+        'customer',
+        'customer.user',
+        'driver',
+        'driver.user',
+        'items',
+      ],
     });
   }
 
@@ -166,10 +199,7 @@ export class OrderRepository {
       .filter((driverId): driverId is string => Boolean(driverId));
   }
 
-  async create(
-    data: Partial<Order>,
-    manager: EntityManager,
-  ): Promise<Order> {
+  async create(data: Partial<Order>, manager: EntityManager): Promise<Order> {
     const repo = manager.getRepository(Order);
     const order = repo.create(data);
     return repo.save(order);

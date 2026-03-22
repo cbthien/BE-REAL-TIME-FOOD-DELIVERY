@@ -31,13 +31,13 @@ const STAFF_ALLOWED_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
 @Injectable()
 export class StaffOrderService {
   constructor(
-  private readonly dataSource: DataSource,
-  private readonly orderRepository: OrderRepository,
-  private readonly driverRepository: DriverRepository,
-  private readonly walletRepository: WalletRepository,
-  private readonly walletTransactionRepository: WalletTransactionRepository,
-  private readonly trackingGateway: TrackingGateway,
-) {}
+    private readonly dataSource: DataSource,
+    private readonly orderRepository: OrderRepository,
+    private readonly driverRepository: DriverRepository,
+    private readonly walletRepository: WalletRepository,
+    private readonly walletTransactionRepository: WalletTransactionRepository,
+    private readonly trackingGateway: TrackingGateway,
+  ) {}
 
   async getAllOrders(query: StaffOrderQueryDto) {
     const orders = await this.orderRepository.findAll(query.status);
@@ -65,144 +65,148 @@ export class StaffOrderService {
   }
 
   async updateOrderStatus(orderId: string, nextStatus: OrderStatus) {
-  const hydratedOrder = await this.dataSource.transaction(async (manager) => {
-    const order = await this.orderRepository.findByIdForUpdate(
-      orderId,
-      manager,
-    );
-
-    if (!order) {
-      throw new NotFoundException('Order not found');
-    }
-
-    if (
-      nextStatus === OrderStatus.PICKED_UP ||
-      nextStatus === OrderStatus.DELIVERED
-    ) {
-      throw new BadRequestException(
-        'Staff cannot set PICKED_UP or DELIVERED',
+    const hydratedOrder = await this.dataSource.transaction(async (manager) => {
+      const order = await this.orderRepository.findByIdForUpdate(
+        orderId,
+        manager,
       );
-    }
 
-    if (order.status === nextStatus) {
+      if (!order) {
+        throw new NotFoundException('Order not found');
+      }
+
+      if (
+        nextStatus === OrderStatus.PICKED_UP ||
+        nextStatus === OrderStatus.DELIVERED
+      ) {
+        throw new BadRequestException(
+          'Staff cannot set PICKED_UP or DELIVERED',
+        );
+      }
+
+      if (order.status === nextStatus) {
+        return this.getHydratedOrderOrFail(order.id, manager);
+      }
+
+      this.validateTransition(order.status, nextStatus);
+
+      order.status = nextStatus;
+      await this.orderRepository.save(order, manager);
+
       return this.getHydratedOrderOrFail(order.id, manager);
-    }
+    });
 
-    this.validateTransition(order.status, nextStatus);
+    this.emitTrackingStatus(hydratedOrder);
 
-    order.status = nextStatus;
-    await this.orderRepository.save(order, manager);
-
-    return this.getHydratedOrderOrFail(order.id, manager);
-  });
-
-  this.emitTrackingStatus(hydratedOrder);
-
-  return this.mapOrderResponse(hydratedOrder);
-}
+    return this.mapOrderResponse(hydratedOrder);
+  }
 
   async assignDriver(orderId: string, driverId: string) {
-  const hydratedOrder = await this.dataSource.transaction(async (manager) => {
-    const order = await this.orderRepository.findByIdForUpdate(orderId, manager);
-
-    if (!order) {
-      throw new NotFoundException('Order not found');
-    }
-
-    if (order.status !== OrderStatus.READY) {
-      throw new BadRequestException(
-        'Only READY orders can be assigned to driver',
+    const hydratedOrder = await this.dataSource.transaction(async (manager) => {
+      const order = await this.orderRepository.findByIdForUpdate(
+        orderId,
+        manager,
       );
-    }
 
-    if (order.driverId) {
-      throw new BadRequestException('Order already has assigned driver');
-    }
+      if (!order) {
+        throw new NotFoundException('Order not found');
+      }
 
-    const driver = await this.driverRepository.findByUserIdForUpdate(
-      driverId,
-      manager,
-    );
+      if (order.status !== OrderStatus.READY) {
+        throw new BadRequestException(
+          'Only READY orders can be assigned to driver',
+        );
+      }
 
-    if (!driver) {
-      throw new NotFoundException('Driver not found');
-    }
+      if (order.driverId) {
+        throw new BadRequestException('Order already has assigned driver');
+      }
 
-    if (driver.status !== DriverStatus.ACTIVE) {
-      throw new BadRequestException('Driver is not active');
-    }
-
-    if (!driver.user?.isActive) {
-      throw new BadRequestException('Driver account is inactive');
-    }
-
-    if (!driver.isOnline) {
-      throw new BadRequestException('Driver is offline');
-    }
-
-    const driverIsBusy = await this.orderRepository.existsActiveOrderByDriverId(
-      driver.userId,
-      manager,
-    );
-
-    if (driverIsBusy) {
-      throw new BadRequestException(
-        'Driver is already handling another active order',
+      const driver = await this.driverRepository.findByUserIdForUpdate(
+        driverId,
+        manager,
       );
-    }
 
-    order.driverId = driver.userId;
-    order.assignedAt = new Date();
+      if (!driver) {
+        throw new NotFoundException('Driver not found');
+      }
 
-    await this.orderRepository.save(order, manager);
+      if (driver.status !== DriverStatus.ACTIVE) {
+        throw new BadRequestException('Driver is not active');
+      }
 
-    return this.getHydratedOrderOrFail(order.id, manager);
-  });
+      if (!driver.user?.isActive) {
+        throw new BadRequestException('Driver account is inactive');
+      }
 
-  this.emitTrackingStatus(hydratedOrder);
+      if (!driver.isOnline) {
+        throw new BadRequestException('Driver is offline');
+      }
 
-  return this.mapOrderResponse(hydratedOrder);
-}
+      const driverIsBusy =
+        await this.orderRepository.existsActiveOrderByDriverId(
+          driver.userId,
+          manager,
+        );
+
+      if (driverIsBusy) {
+        throw new BadRequestException(
+          'Driver is already handling another active order',
+        );
+      }
+
+      order.driverId = driver.userId;
+      order.assignedAt = new Date();
+
+      await this.orderRepository.save(order, manager);
+
+      return this.getHydratedOrderOrFail(order.id, manager);
+    });
+
+    this.emitTrackingStatus(hydratedOrder);
+
+    return this.mapOrderResponse(hydratedOrder);
+  }
 
   async cancelOrder(orderId: string) {
-  const hydratedOrder = await this.dataSource.transaction(async (manager) => {
-    const order = await this.orderRepository.findByIdForUpdate(
-      orderId,
-      manager,
-    );
+    const hydratedOrder = await this.dataSource.transaction(async (manager) => {
+      const order = await this.orderRepository.findByIdForUpdate(
+        orderId,
+        manager,
+      );
 
-    if (!order) {
-      throw new NotFoundException('Order not found');
-    }
+      if (!order) {
+        throw new NotFoundException('Order not found');
+      }
 
-    if (order.status === OrderStatus.CANCELLED) {
+      if (order.status === OrderStatus.CANCELLED) {
+        return this.getHydratedOrderOrFail(order.id, manager);
+      }
+
+      if (
+        order.status === OrderStatus.PICKED_UP ||
+        order.status === OrderStatus.DELIVERED
+      ) {
+        throw new BadRequestException('Order cannot be cancelled after pickup');
+      }
+
+      if (
+        order.paymentMethod === PaymentMethod.WALLET &&
+        order.paymentStatus === PaymentStatus.PAID
+      ) {
+        await this.refundToWallet(order, manager);
+      } else {
+        order.status = OrderStatus.CANCELLED;
+        await this.orderRepository.save(order, manager);
+      }
+
       return this.getHydratedOrderOrFail(order.id, manager);
-    }
+    });
 
-    if (
-      order.status === OrderStatus.PICKED_UP ||
-      order.status === OrderStatus.DELIVERED
-    ) {
-      throw new BadRequestException('Order cannot be cancelled after pickup');
-    }
+    this.emitTrackingStatus(hydratedOrder);
 
-    if (
-      order.paymentMethod === PaymentMethod.WALLET &&
-      order.paymentStatus === PaymentStatus.PAID
-    ) {
-      await this.refundToWallet(order, manager);
-    } else {
-      order.status = OrderStatus.CANCELLED;
-      await this.orderRepository.save(order, manager);
-    }
-
-    return this.getHydratedOrderOrFail(order.id, manager);
-  });
-
-  this.emitTrackingStatus(hydratedOrder);
-
-  return this.mapOrderResponse(hydratedOrder);
-}
+    return this.mapOrderResponse(hydratedOrder);
+  }
 
   async getAvailableDrivers() {
     const candidateDrivers = await this.driverRepository.findAvailableDrivers();
@@ -279,7 +283,10 @@ export class StaffOrderService {
     await this.orderRepository.save(order, manager);
   }
 
-  private async getHydratedOrderOrFail(orderId: string, manager: EntityManager) {
+  private async getHydratedOrderOrFail(
+    orderId: string,
+    manager: EntityManager,
+  ) {
     const order = await this.orderRepository.findById(orderId, manager);
 
     if (!order) {
@@ -290,15 +297,15 @@ export class StaffOrderService {
   }
 
   private emitTrackingStatus(order: Order) {
-  try {
-    this.trackingGateway.emitOrderStatusUpdated(
-      String(order.id),
-      this.mapTrackingResponse(order),
-    );
-  } catch {
-    void 0;
+    try {
+      this.trackingGateway.emitOrderStatusUpdated(
+        String(order.id),
+        this.mapTrackingResponse(order),
+      );
+    } catch {
+      void 0;
+    }
   }
-}
 
   private mapTrackingResponse(order: Order) {
     return {

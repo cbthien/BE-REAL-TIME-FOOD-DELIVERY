@@ -14,15 +14,21 @@ import { OrderItem } from '../entities/order-item.entity';
 import { Wallet } from '../entities/wallet.entity';
 import { WalletTransaction } from '../entities/wallet-transaction.entity';
 
+const isProduction = process.env.NODE_ENV === 'production';
+
 export const databaseConfig: TypeOrmModuleOptions = {
   type: 'postgres',
-  host: 'localhost',
-  port: 5432,
-  username: 'postgres',
-  password: '123456',
-  database: 'real_time_food_delivery',
-  synchronize: true,
-  logging: true,
+  host: process.env.DB_HOST ?? 'localhost',
+  port: Number(process.env.DB_PORT ?? 5432),
+  username: process.env.DB_USERNAME ?? 'postgres',
+  password: process.env.DB_PASSWORD ?? '123456',
+  database: process.env.DB_NAME ?? 'real_time_food_delivery',
+  synchronize: process.env.DB_SYNCHRONIZE
+    ? process.env.DB_SYNCHRONIZE === 'true'
+    : !isProduction,
+  logging: process.env.DB_LOGGING === 'true',
+  retryAttempts: Number(process.env.DB_RETRY_ATTEMPTS ?? 3),
+  retryDelay: Number(process.env.DB_RETRY_DELAY ?? 1000),
   entities: [
     User,
     Customer,
